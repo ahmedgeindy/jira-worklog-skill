@@ -1,0 +1,266 @@
+{
+  "apiVersion": "v2",
+  "command": "jira.workitem.worklog.query",
+  "request": {
+    "site": "example.atlassian.net",
+    "issueId": "PROJ-141"
+  },
+  "data": [
+    {
+      "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226590",
+      "author": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
+        "accountId": "a1b2c3d4e5f60718293a4b5c",
+        "displayName": "Second Author",
+        "active": true,
+        "timeZone": "Asia/Riyadh",
+        "accountType": "atlassian"
+      },
+      "updateAuthor": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
+        "accountId": "a1b2c3d4e5f60718293a4b5c",
+        "displayName": "Second Author",
+        "active": true,
+        "timeZone": "Asia/Riyadh",
+        "accountType": "atlassian"
+      },
+      "comment": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "work logged"
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "work logged"
+              }
+            ]
+          }
+        ]
+      },
+      "created": "2026-09-08T15:33:48.707+0300",
+      "updated": "2026-09-08T15:33:48.707+0300",
+      "started": "2026-07-12T10:00:00.000+0300",
+      "timeSpent": "1d 10m",
+      "timeSpentSeconds": 29400,
+      "id": "226590",
+      "issueId": "52817"
+    },
+    {
+      "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226591",
+      "author": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
+        "accountId": "a1b2c3d4e5f60718293a4b5c",
+        "displayName": "Second Author",
+        "active": true,
+        "timeZone": "Asia/Riyadh",
+        "accountType": "atlassian"
+      },
+      "updateAuthor": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
+        "accountId": "a1b2c3d4e5f60718293a4b5c",
+        "displayName": "Second Author",
+        "active": true,
+        "timeZone": "Asia/Riyadh",
+        "accountType": "atlassian"
+      },
+      "comment": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "work logged"
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "work logged"
+              }
+            ]
+          }
+        ]
+      },
+      "created": "2026-09-08T15:33:49.228+0300",
+      "updated": "2026-09-08T15:53:30.663+0300",
+      "started": "2026-07-13T10:00:00.000+0300",
+      "timeSpent": "7h 10m",
+      "timeSpentSeconds": 25800,
+      "id": "226591",
+      "issueId": "52817"
+    },
+    {
+      "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226592",
+      "author": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
+        "accountId": "a1b2c3d4e5f60718293a4b5c",
+        "displayName": "Second Author",
+        "active": true,
+        "timeZone": "Asia/Riyadh",
+        "accountType": "atlassian"
+      },
+      "updateAuthor": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
+        "accountId": "a1b2c3d4e5f60718293a4b5c",
+        "displayName": "Second Author",
+        "active": true,
+        "timeZone": "Asia/Riyadh",
+        "accountType": "atlassian"
+      },
+      "comment": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "work logged"
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "work logged"
+              }
+            ]
+          }
+        ]
+      },
+      "created": "2026-09-08T15:33:49.697+0300",
+      "updated": "2026-09-08T15:53:42.397+0300",
+      "started": "2026-07-14T10:00:00.000+0300",
+      "timeSpent": "7h 10m",
+      "timeSpentSeconds": 25800,
+      "id": "226592",
+      "issueId": "52817"
+    },
+    {
+      "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226593",
+      "author": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
+        "accountId": "a1b2c3d4e5f60718293a4b5c",
+        "displayName": "Second Author",
+        "active": true,
+        "timeZone": "Asia/Riyadh",
+        "accountType": "atlassian"
+      },
+      "updateAuthor": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
+        "accountId": "a1b2c3d4e5f60718293a4b5c",
+        "displayName": "Second Author",
+        "active": true,
+        "timeZone": "Asia/Riyadh",
+        "accountType": "atlassian"
+      },
+      "comment": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "work logged"
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "work logged"
+              }
+            ]
+          }
+        ]
+      },
+      "created": "2026-09-08T15:33:50.174+0300",
+      "updated": "2026-09-09T10:46:40.824+0300",
+      "started": "2026-07-15T10:00:00.000+0300",
+      "timeSpent": "7h 10m",
+      "timeSpentSeconds": 25800,
+      "id": "226593",
+      "issueId": "52817"
+    },
+    {
+      "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226594",
+      "author": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
+        "accountId": "a1b2c3d4e5f60718293a4b5c",
+        "displayName": "Second Author",
+        "active": true,
+        "timeZone": "Asia/Riyadh",
+        "accountType": "atlassian"
+      },
+      "updateAuthor": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
+        "accountId": "a1b2c3d4e5f60718293a4b5c",
+        "displayName": "Second Author",
+        "active": true,
+        "timeZone": "Asia/Riyadh",
+        "accountType": "atlassian"
+      },
+      "comment": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "work logged"
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "work logged"
+              }
+            ]
+          }
+        ]
+      },
+      "created": "2026-09-08T15:33:50.668+0300",
+      "updated": "2026-09-08T15:56:48.028+0300",
+      "started": "2026-07-16T10:00:00.000+0300",
+      "timeSpent": "2h 10m",
+      "timeSpentSeconds": 7800,
+      "id": "226594",
+      "issueId": "52817"
+    }
+  ],
+  "pageInfo": {
+    "hasNextPage": false,
+    "nextCursor": null
+  },
+  "meta": {
+    "resourceClass": "entity",
+    "sourceMode": "native",
+    "resourceType": "jira.worklog",
+    "backend": "rest-v3",
+    "apiVersion": "rest-v3",
+    "pagination": {
+      "startAt": 0,
+      "maxResults": 5000,
+      "total": 5
+    }
+  }
+}
