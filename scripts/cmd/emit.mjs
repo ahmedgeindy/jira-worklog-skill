@@ -6,7 +6,14 @@ import { assertArgvSafe } from '../lib/twg.mjs'
 
 // Anything that could change how PowerShell parses the line, or that would let a
 // comment smuggle a second command in. Refused at emit time, not escaped.
-const UNSAFE = /[`$;&|<>\r\n\u0000]/
+//
+// `"` is included even though every argument is single-quoted (so `"` is
+// inert to PowerShell in the write command itself): the agent loop
+// re-wraps the emitted line as `--cmd "<line>"` for check-cmd, and an
+// embedded `"` there breaks the outer quoting, which can make check-cmd's
+// byte-equality comparison see a different string than the one that
+// actually runs. Refusing at emit time is strictly safer than escaping it.
+const UNSAFE = /["`$;&|<>\r\n\u0000]/
 
 export function psQuote(arg) {
   const s = String(arg)

@@ -75,6 +75,15 @@ test('a comment carrying a shell metacharacter is REFUSED at emit time', () => {
   assert.throws(() => emitManifest(p, '2026-09-08', BIN), /unsafe character/i)
 })
 
+// Fix 3: `"` is inert inside the single-quoted PowerShell argument itself, but
+// the agent loop re-wraps the emitted line as `--cmd "<line>"` for check-cmd —
+// an embedded `"` there breaks the outer quoting and can desync check-cmd's
+// byte-equality comparison from what actually runs. Refuse at emit time.
+test('a comment carrying a double quote is REFUSED at emit time', () => {
+  const p = makePlan({ comment: 'said "hi" [twl:abc123]' })
+  assert.throws(() => emitManifest(p, '2026-09-08', BIN), /unsafe character/i)
+})
+
 test('check-cmd accepts the byte-identical line and leaves an approval token', () => {
   const p = makePlan()
   const [row] = emitManifest(p, '2026-09-08', BIN)
@@ -115,6 +124,62 @@ test('checkCmd throws if deps.tokens is missing, rather than silently skipping b
   assert.throws(() => checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps }), /deps\.tokens/)
 })
 
+// --- Fix 1: checkCmd must not let a live DUPLICATE/AMBIGUOUS through just
+// because the plan already froze that same state. Three distinct cases plus
+// the CLEAR baseline. ---
+
+test('checkCmd: plan-time DUPLICATE + live DUPLICATE still fails (regression)', () => {
+  const p = makePlan({ dedupeState: 'DUPLICATE' })
+  const [row] = emitManifest(p, '2026-09-08', BIN)
+  const tokens = makeTokenStore()
+  // Same accountId + same seconds as the plan -> classify() returns DUPLICATE.
+  const deps = { checkWindow: () => [{ author: { accountId: ME }, timeSpentSeconds: 25200 }], bin: BIN, tokens }
+  const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /DUPLICATE/)
+  assert.match(r.reason, /stop/i)
+  assert.equal(tokens.has('abc123'), false)
+})
+
+test('checkCmd: plan-time AMBIGUOUS + live AMBIGUOUS still fails', () => {
+  const p = makePlan({ dedupeState: 'AMBIGUOUS' })
+  const [row] = emitManifest(p, '2026-09-08', BIN)
+  const tokens = makeTokenStore()
+  // A row with no author.accountId at all -> classify() returns AMBIGUOUS.
+  const deps = { checkWindow: () => [{ timeSpentSeconds: 999 }], bin: BIN, tokens }
+  const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /AMBIGUOUS/)
+  assert.match(r.reason, /stop/i)
+  assert.equal(tokens.has('abc123'), false)
+})
+
+test('checkCmd: plan-time EXISTING + live EXISTING passes (top-up flow, regression)', () => {
+  const p = makePlan({ dedupeState: 'EXISTING' })
+  const [row] = emitManifest(p, '2026-09-08', BIN)
+  const tokens = makeTokenStore()
+  // Same accountId, different seconds, no marker -> classify() returns EXISTING,
+  // matching the plan. This is the "close a SHORT day with a top-up" flow and
+  // must pass rather than being blocked as drift or as a duplicate.
+  const deps = {
+    checkWindow: () => [{ author: { accountId: ME }, timeSpentSeconds: 3600, comment: {} }],
+    bin: BIN, tokens,
+  }
+  const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
+  assert.equal(r.ok, true)
+  assert.equal(tokens.has('abc123'), true)
+})
+
+test('checkCmd: CLEAR passes', () => {
+  const p = makePlan({ dedupeState: 'CLEAR' })
+  const [row] = emitManifest(p, '2026-09-08', BIN)
+  const tokens = makeTokenStore()
+  const deps = { checkWindow: () => [], bin: BIN, tokens }
+  const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
+  assert.equal(r.ok, true)
+  assert.equal(tokens.has('abc123'), true)
+})
+
 test('check-write confirms exactly one row carrying this fingerprint marker (token present)', () => {
   const p = makePlan()
   const deps = {
@@ -134,6 +199,17 @@ test('check-write fails when the write did not land (token present)', () => {
   const p = makePlan()
   const deps = { checkWindow: () => [], readEstimate: () => 0, tokens: makeTokenStore(['abc123']) }
   assert.equal(checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps }).ok, false)
+})
+
+// Fix 2: an unknown --date must fail cleanly with a domain reason, not throw a
+// raw TypeError from `plan.days.find(...).entries.find(...)`.
+test('check-write fails with a clear reason (not a raw TypeError) when --date names a day the plan does not contain', () => {
+  const p = makePlan()
+  const deps = { checkWindow: () => [], readEstimate: () => 0, tokens: makeTokenStore(['abc123']) }
+  assert.doesNotThrow(() => checkWrite({ plan: p, date: '2099-01-01', key: 'HCFM-323', deps }))
+  const r = checkWrite({ plan: p, date: '2099-01-01', key: 'HCFM-323', deps })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /no day|contains no day/i)
 })
 
 test('check-write fails on TWO rows carrying the same marker (double-log, token present)', () => {

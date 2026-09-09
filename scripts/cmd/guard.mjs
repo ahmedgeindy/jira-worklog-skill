@@ -75,7 +75,26 @@ export function checkCmd({ plan, date, cmd, deps }) {
 
   const rows = deps.checkWindow({ key: planned.key, accountId: plan.accountId, zone: plan.zone, isoDate: date })
   const state = classify(rows, { accountId: plan.accountId, seconds: planned.seconds, fp: planned.fingerprint })
-  if (state !== 'CLEAR' && state !== planned.dedupeState) {
+
+  // A live DUPLICATE/AMBIGUOUS always stops the day, regardless of what the
+  // plan froze — including a plan that itself was already frozen as
+  // DUPLICATE/AMBIGUOUS (e.g. an accidental re-run of `plan` for a day already
+  // committed). This must NOT be folded into the drift check below: an
+  // unchanged DUPLICATE/AMBIGUOUS state would otherwise satisfy
+  // `state === planned.dedupeState` and pass.
+  if (state === 'DUPLICATE' || state === 'AMBIGUOUS') {
+    const driftNote = state !== planned.dedupeState
+      ? ` (drift since plan time: was ${planned.dedupeState})`
+      : ' (unchanged from plan time — an earlier plan/write for this day was never resolved)'
+    return { ok: false, entry, reason: `${state} at write time${driftNote} — refusing to write, stop this day and reconcile manually` }
+  }
+
+  // Otherwise, only a CHANGE in state since plan time is a problem. This is
+  // what lets the required top-up flow work: when a day is under the 7h floor,
+  // re-running `plan` for entries already on the issue that day correctly
+  // classifies them as EXISTING (matching what the plan itself recorded), and
+  // that must pass so the human can approve it in the preview.
+  if (state !== planned.dedupeState) {
     return { ok: false, entry, reason: `drift since plan time: was ${planned.dedupeState}, now ${state} (possible duplicate) — stop this day` }
   }
 
@@ -99,7 +118,9 @@ export function checkCmd({ plan, date, cmd, deps }) {
  */
 export function checkWrite({ plan, date, key, deps }) {
   const tokens = requireTokens(deps)
-  const planned = plan.days.find((d) => d.date === date).entries.find((e) => e.key === key)
+  const day = plan.days.find((d) => d.date === date)
+  if (!day) return { ok: false, reason: `plan contains no day ${date}` }
+  const planned = day.entries.find((e) => e.key === key)
   if (!planned) return { ok: false, reason: `plan has no entry for ${key} on ${date}` }
 
   const authorized = tokens.take(planned.fingerprint)
