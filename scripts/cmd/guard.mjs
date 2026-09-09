@@ -1,0 +1,128 @@
+// skills/jira-worklog/scripts/cmd/guard.mjs
+// Read-only guards the agent must call around every write. No spawning of writes.
+import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { emitManifest } from './emit.mjs'
+import { classify, markerFor, flattenAdf } from '../lib/dedup.mjs'
+
+/**
+ * Real, on-disk approval-token store (Ruling 2: guard-bypass detection).
+ *
+ * The write itself is triggered OUTSIDE this process — the agent's own
+ * PowerShell tool call — so nothing in-process can PREVENT an agent from
+ * issuing that line without ever calling check-cmd first; its permission
+ * prompt looks identical either way. A file beside the plan is the only
+ * channel check-write has to tell "check-cmd ran for this exact fingerprint"
+ * apart from "it did not": one token per fingerprint, written on a successful
+ * check-cmd, consumed (checked-and-deleted) by check-write.
+ */
+export function fileTokenStore(dir) {
+  const pathFor = (fp) => join(dir, `.jira-worklog-approved-${fp}`)
+  return {
+    put(fp) {
+      writeFileSync(pathFor(fp), String(Date.now()))
+    },
+    has(fp) {
+      return existsSync(pathFor(fp))
+    },
+    take(fp) {
+      const p = pathFor(fp)
+      const had = existsSync(p)
+      if (had) {
+        try {
+          unlinkSync(p)
+        } catch {
+          /* already gone; `had` still correctly reports it existed at check time */
+        }
+      }
+      return had
+    },
+  }
+}
+
+function requireTokens(deps) {
+  if (!deps?.tokens) {
+    throw new Error(
+      'deps.tokens is required (fileTokenStore(dir) in production, a test double in tests) — ' +
+      'refusing to run with guard-bypass detection silently disabled',
+    )
+  }
+  return deps.tokens
+}
+
+/**
+ * Called BEFORE the agent runs a write line. Two independent checks:
+ *  1. the literal line is byte-identical to the frozen manifest entry
+ *     (restores "previewed == written" now that the shell is on the write path)
+ *  2. live server state still matches what the plan saw
+ * On success, records an approval token for this fingerprint (Ruling 2) so
+ * check-write can tell a legitimate write from a bypassed one.
+ */
+export function checkCmd({ plan, date, cmd, deps }) {
+  const tokens = requireTokens(deps)
+  const manifest = emitManifest(plan, date, deps.bin)
+  const entry = manifest.find((m) => m.command === cmd)
+  if (!entry) {
+    return {
+      ok: false, entry: null,
+      reason: 'the command does not match the manifest byte-for-byte; refusing. Re-run plan and use the emitted line verbatim.',
+    }
+  }
+
+  const planned = plan.days
+    .find((d) => d.date === date)
+    .entries.find((e) => e.fingerprint === entry.fingerprint)
+
+  const rows = deps.checkWindow({ key: planned.key, accountId: plan.accountId, zone: plan.zone, isoDate: date })
+  const state = classify(rows, { accountId: plan.accountId, seconds: planned.seconds, fp: planned.fingerprint })
+  if (state !== 'CLEAR' && state !== planned.dedupeState) {
+    return { ok: false, entry, reason: `drift since plan time: was ${planned.dedupeState}, now ${state} (possible duplicate) — stop this day` }
+  }
+
+  tokens.put(entry.fingerprint)
+  return { ok: true, entry, reason: '' }
+}
+
+/**
+ * Called AFTER the agent runs a write line. Reads from the SERVER, so it also
+ * catches the case where the call timed out locally but Jira committed.
+ *
+ * Ruling 2 (guard-bypass detection, prose over the brief's code block): the
+ * agent could run the PowerShell write line directly, skipping check-cmd — its
+ * permission prompt looks identical to the legitimate flow, so the human
+ * approves a write whose drift check never ran. Nothing in-process can PREVENT
+ * that now that the trigger lives outside the script, so this makes it LOUD
+ * instead of silent: check-write requires the approval token check-cmd left
+ * behind, and consumes it (take: check-and-delete) UNCONDITIONALLY before
+ * doing anything else — one check-cmd authorizes exactly one check-write, so a
+ * retry always forces a fresh drift check.
+ */
+export function checkWrite({ plan, date, key, deps }) {
+  const tokens = requireTokens(deps)
+  const planned = plan.days.find((d) => d.date === date).entries.find((e) => e.key === key)
+  if (!planned) return { ok: false, reason: `plan has no entry for ${key} on ${date}` }
+
+  const authorized = tokens.take(planned.fingerprint)
+  if (!authorized) {
+    return { ok: false, reason: 'GUARD BYPASSED: write issued without check-cmd (no approval token found for this fingerprint)' }
+  }
+
+  const marker = markerFor(planned.fingerprint)
+  const rows = deps.checkWindow({ key, accountId: plan.accountId, zone: plan.zone, isoDate: date })
+  const mine = rows.filter(
+    (r) => r?.author?.accountId === plan.accountId && flattenAdf(r.comment).includes(marker),
+  )
+
+  if (mine.length === 0) return { ok: false, reason: `no worklog carrying ${marker} found on ${key} for ${date}; the write did not land` }
+  if (mine.length > 1) return { ok: false, reason: `found ${mine.length} rows carrying ${marker} — duplicate write, stop and reconcile manually` }
+
+  const before = planned.estimateBefore ?? 0
+  if (before > 0) {
+    const after = deps.readEstimate(key)
+    if (after !== before) {
+      return { ok: false, worklogId: String(mine[0].id), reason: `ESTIMATE_CLOBBERED: remaining estimate went ${before} -> ${after}` }
+    }
+  }
+
+  return { ok: true, worklogId: String(mine[0].id), reason: '' }
+}
