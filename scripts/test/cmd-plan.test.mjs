@@ -12,7 +12,10 @@ function deps({ dayTotalStatus = 'OK', existing = 0 } = {}) {
     dayTotal: () => ({ seconds: existing, status: dayTotalStatus, reason: 'ctl', countedWorklogIds: [], candidates: [] }),
     checkWindow: () => [],
     bundle: () => ({
-      perIssue: { 'PROJ-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Progress' }] },
+      perIssue: {
+        'PROJ-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Progress' }],
+        'PROJ-324': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Review' }],
+      },
       commentSource: 'EVIDENCED', bundleHash: 'bh',
     }),
     resolveIssue: (key) => ({ key, numericId: '999', site: 'example.atlassian.net' }),
@@ -95,4 +98,68 @@ test('a comment built from a multi-field evidence fragment carries no semicolon'
   const comment = p.days[0].entries[0].comment
   assert.equal(comment.includes(';'), false)
   assert.ok(comment.includes('In Progress'))
+})
+
+// --- I6 / decision D1b: a SHORT day must carry its breach into that day's
+// worklog comment. A gitignored local ledger is never read by a manager. ---
+
+test('a SHORT day writes the breach into every one of that day\'s comments', () => {
+  const p = runPlan({ lines: ['PROJ-323 2h', 'PROJ-324 3h'], isoDate: '2026-09-08', deps: deps() })
+  assert.equal(p.days[0].status, 'SHORT')
+  for (const e of p.days[0].entries) {
+    assert.match(e.comment, /logged 5\.0h, below the 7h policy floor/)
+  }
+})
+
+test('the breach states the WHOLE day, server time included, not just what is being written', () => {
+  const p = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 3 * 3600 }) })
+  assert.equal(p.days[0].status, 'SHORT')
+  assert.match(p.days[0].entries[0].comment, /logged 5\.0h/)
+})
+
+test('the breach note never computes the gap or names an issue to fill it (D1a)', () => {
+  const p = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps() })
+  const c = p.days[0].entries[0].comment
+  assert.match(c, /logged 2\.0h, below the 7h policy floor/)
+  // The ONLY hour figures in the comment are the day total and the floor. The
+  // difference between them - the fillable gap - is never computed anywhere.
+  assert.deepEqual([...c.matchAll(/\d+(?:\.\d+)?h\b/g)].map((m) => m[0]), ['2.0h', '7h'])
+  assert.equal(/short by|remaining|to add|gap/i.test(c), false)
+  assert.equal(c.includes('PROJ-345'), false)
+})
+
+test('a day that MEETS the floor carries no breach text', () => {
+  const p = runPlan({ lines: ['PROJ-323 7h'], isoDate: '2026-09-08', deps: deps() })
+  assert.equal(p.days[0].status, 'MEETS')
+  assert.equal(/policy floor/i.test(p.days[0].entries[0].comment), false)
+})
+
+test('the breach text is emittable: no semicolon or other refused character', () => {
+  const p = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps() })
+  assert.equal(/["`$;&|<>\r\n]/.test(p.days[0].entries[0].comment), false)
+})
+
+// --- Duplicate input lines. Two entries for one issue on one day derive the
+// same fingerprint when the hours match, so emit prints the write twice. ---
+
+test('two identical input lines are refused at PLAN time', () => {
+  assert.throws(
+    () => runPlan({ lines: ['PROJ-323 3h', 'PROJ-323 3h'], isoDate: '2026-09-08', deps: deps() }),
+    /twice on 2026-09-08/i,
+  )
+})
+
+test('the same issue twice with DIFFERENT hours is refused too', () => {
+  // Not a fingerprint collision, but the first write flips the second entry's
+  // live dedupe state, so check-cmd would abort the day half-committed.
+  assert.throws(
+    () => runPlan({ lines: ['PROJ-323 3h', 'PROJ-323 2h'], isoDate: '2026-09-08', deps: deps() }),
+    /at most once per day/i,
+  )
+})
+
+test('two DIFFERENT issues on one day are still fine', () => {
+  const p = runPlan({ lines: ['PROJ-323 3h', 'PROJ-324 4h'], isoDate: '2026-09-08', deps: deps() })
+  assert.equal(p.days[0].entries.length, 2)
+  assert.equal(p.days[0].entries[0].fingerprint === p.days[0].entries[1].fingerprint, false)
 })

@@ -2,32 +2,12 @@
 // Renders the write commands the AGENT will run as its own tool calls.
 // This module NEVER spawns. Nothing here can write to Jira.
 import { buildAddArgv } from '../lib/plan.mjs'
-import { assertArgvSafe } from '../lib/twg.mjs'
+import { psQuote, renderPsCommand } from '../lib/psline.mjs'
 
-// Anything that could change how PowerShell parses the line, or that would let a
-// comment smuggle a second command in. Refused at emit time, not escaped.
-//
-// `"` is included even though every argument is single-quoted (so `"` is
-// inert to PowerShell in the write command itself): the agent loop
-// re-wraps the emitted line as `--cmd "<line>"` for check-cmd, and an
-// embedded `"` there breaks the outer quoting, which can make check-cmd's
-// byte-equality comparison see a different string than the one that
-// actually runs. Refusing at emit time is strictly safer than escaping it.
-const UNSAFE = /["`$;&|<>\r\n\u0000]/
-
-export function psQuote(arg) {
-  const s = String(arg)
-  if (UNSAFE.test(s)) {
-    throw new Error(`unsafe character in argument, refusing to emit: ${JSON.stringify(s)}`)
-  }
-  return `'${s.replace(/'/g, "''")}'`
-}
-
-/** `& 'C:/twg/twg.exe' 'jira' 'workitem' … ` — no chaining, no redirection. */
-export function renderPsCommand(argv, bin) {
-  assertArgvSafe(argv)
-  return [`& ${psQuote(bin)}`, ...argv.map(psQuote)].join(' ')
-}
+// psQuote / renderPsCommand live in lib/psline.mjs so that lib/preview.mjs can
+// render the gate through the SAME renderer. Re-exported here because this is
+// where callers (and the tests) have always found them.
+export { psQuote, renderPsCommand }
 
 /**
  * One literal command per entry, in write order.
@@ -36,8 +16,9 @@ export function renderPsCommand(argv, bin) {
  *
  * NOTE: this function only ever CONSTRUCTS a `worklog add` argv (via
  * buildAddArgv) and renders it to text. It never calls lib/twg.mjs's run(), so
- * nothing here can reach a live Jira write — see timelog.mjs and
- * task-11-13-report.md's Step 6 grep for the proof.
+ * nothing here can reach a live Jira write — and since the I4 fix, run() itself
+ * refuses a `worklog add` argv outright, so that is now an invariant rather
+ * than an absence of callers.
  */
 export function emitManifest(plan, date, bin) {
   const day = plan.days.find((d) => d.date === date)
