@@ -58,6 +58,30 @@ export function buildAddArgv(entry) {
   ]
 }
 
+/**
+ * Neutralise characters lib/psline.mjs's UNSAFE regex refuses, so a perfectly
+ * ordinary evidence value (R&D, Q1 > Q2, a $ in a summary) never crashes
+ * `plan` with a raw stack trace (task-14 Fix A). Replace where a replacement
+ * preserves meaning; remove the rest. Pure - never throws, so it is also safe
+ * to use on the GROUNDING side of validateComment below, where a candidate
+ * that happens to contain something exotic must degrade gracefully rather
+ * than abort the comparison.
+ *
+ * Applied ONLY to comment text (and, transiently, to grounding candidates
+ * derived from evidence for comparison purposes) - never to the stored
+ * evidence[] fragments themselves, which are the audit trail under planHash.
+ */
+export function sanitizeCommentText(text) {
+  return String(text ?? '')
+    .replace(/&/g, 'and')
+    .replace(/</g, 'lt')
+    .replace(/>/g, 'gt')
+    .replace(/\|/g, '/')
+    .replace(/[`$;"\r\n]/g, '')
+    .replace(/ {2,}/g, ' ')
+    .trim()
+}
+
 const TOKEN_RE = /\b([A-Z][A-Z0-9]+-\d+|[0-9a-f]{7,40}|[\w.-]+\.(?:ts|js|mjs|tsx|md|json|prisma|sql|cs))\b/g
 
 /**
@@ -109,7 +133,15 @@ export function validateComment(text, bundleForIssue) {
     return { ok: false, reason: 'no evidence for this issue on this day; the comment must come from the user' }
   }
 
-  const haystack = fragments.join(' | ')
+  // The comment text `s` reaches here already sanitized (cmd/plan.mjs applies
+  // sanitizeCommentText before calling validateComment - task-14 Fix A), so an
+  // evidence value like 'R&D' is compared as it will actually appear: 'RandD'.
+  // Sanitizing each fragment before joining (not the joined haystack as a
+  // whole) matters: sanitizing can CREATE a new substring the raw fragment
+  // never had (e.g. 'R&D.md' -> 'RandD.md', which TOKEN_RE's filename
+  // alternative can match) - if the haystack were built from raw fragments,
+  // that would be falsely flagged as unsupported.
+  const haystack = fragments.map((f) => sanitizeCommentText(f)).join(' | ')
   const claimed = [...s.matchAll(TOKEN_RE)].map((m) => m[1])
   const unsupported = claimed.filter((t) => !haystack.includes(t))
   if (unsupported.length) {
@@ -119,7 +151,13 @@ export function validateComment(text, bundleForIssue) {
   // Token-absence is NOT a pass. A comment naming nothing checkable ("fixed the auth
   // bug") would otherwise sail through - the exact fabrication this guard exists to
   // stop. Require the comment to quote some of the evidence.
-  const grounded = fragments.some((f) => groundingTokens(f).some((t) => s.includes(t)))
+  //
+  // groundingTokens still runs on the RAW fragment: it splits on ';' to keep
+  // multiple changelog fields independently groundable, and sanitizing the
+  // whole fragment first (removing ';') would merge two fields into one
+  // longer candidate and break that. Only the extracted CANDIDATE is
+  // sanitized, right before the comparison against `s`.
+  const grounded = fragments.some((f) => groundingTokens(f).some((t) => s.includes(sanitizeCommentText(t))))
   if (!grounded) {
     return { ok: false, reason: 'comment is not grounded in any evidence fragment for this issue' }
   }
@@ -149,6 +187,11 @@ export function hashPlan(plan) {
         seconds: e.seconds, started: e.started ?? null,
         comment: e.comment ?? null, fingerprint: e.fingerprint ?? null,
         hoursSource: e.hoursSource ?? null,
+        // task-14 Fix B: whether the comment was written by the human
+        // (USER_SUPPLIED, grounding skipped) or composed by the tool from
+        // evidence (EVIDENCED, grounding enforced) changes what the approval
+        // actually means, so it must be inside the hash the human approves.
+        commentSource: e.commentSource ?? null,
         dedupeState: e.dedupeState ?? null,
         estimateBefore: e.estimateBefore ?? null,
         existingSecondsOnIssue: e.existingSecondsOnIssue ?? null,

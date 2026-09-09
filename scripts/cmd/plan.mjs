@@ -1,8 +1,9 @@
 // skills/jira-worklog/scripts/cmd/plan.mjs
 import { parseLine } from '../lib/urls.mjs'
-import { sequenceStarts, hashPlan, validateComment } from '../lib/plan.mjs'
+import { sequenceStarts, hashPlan, validateComment, sanitizeCommentText } from '../lib/plan.mjs'
 import { fingerprint, markerFor, classify } from '../lib/dedup.mjs'
 import { isWorkday, weekdayOf, assertNotFuture, localVsJiraDateDiffers } from '../lib/tz.mjs'
+import { UNSAFE_CHARS } from '../lib/psline.mjs'
 
 const FLOOR_SECONDS = 7 * 3600
 const MAX_DAYS = 5
@@ -67,6 +68,11 @@ export function runPlan({ lines, isoDate, deps = {} }) {
         // silently never fire — closing a risk with a check that cannot fire.
         estimateBefore: Number(deps.readEstimate(p.key)),
         evidence: evidence.perIssue[p.key] ?? [],
+        // task-14 Fix B: the ' :: ' comment the human typed on the input line,
+        // if any. Carried only as far as the comment-building step below,
+        // which strips it back off before the entry is returned - it is raw,
+        // pre-sanitize input and must never be the thing planHash covers.
+        userComment: p.comment ?? null,
       }
     })
 
@@ -91,14 +97,35 @@ export function runPlan({ lines, isoDate, deps = {} }) {
       // would make every comment fail as "names things absent from the evidence bundle".
       // The marker is tool metadata, not a claim that needs grounding, so it is appended
       // only after validation passes.
-      const body = buildCommentBody(e, { status, totalSeconds })
-      const v = validateComment(body, e.evidence)
-      if (!v.ok) throw new Error(`comment rejected for ${e.key}: ${v.reason}`)
+      //
+      // task-14 Fix B: a ' :: ' comment on the input line is USER_SUPPLIED - a
+      // human wrote it, so grounding is meaningless and skipped. Everything
+      // else is EVIDENCED and still fully grounded (Fix A must not weaken
+      // that). Both paths sanitize the same way (Fix A) and both are rejected
+      // outright if sanitization cannot make the result shell-safe, rather
+      // than letting an exotic character reach lib/psline.mjs later.
+      let body
+      let commentSource
+      if (e.userComment) {
+        body = sanitizeCommentText(e.userComment)
+        if (!body) throw new Error(`comment rejected for ${e.key}: user comment is empty after sanitization`)
+        commentSource = 'USER_SUPPLIED'
+      } else {
+        body = sanitizeCommentText(buildCommentBody(e, { status, totalSeconds }))
+        const v = validateComment(body, e.evidence)
+        if (!v.ok) throw new Error(`comment rejected for ${e.key}: ${v.reason}`)
+        commentSource = 'EVIDENCED'
+      }
+      if (UNSAFE_CHARS.test(body)) {
+        throw new Error(`comment rejected for ${e.key}: still unsafe after sanitization`)
+      }
       const comment = `${body} ${markerFor(fp)}`
+      const { userComment: _userComment, ...frozen } = e
       return {
-        ...e,
+        ...frozen,
         fingerprint: fp,
         comment,
+        commentSource,
         dedupeState: classify(rows, { accountId: identity.accountId, seconds: e.seconds, fp }),
         existingSecondsOnIssue: mine.reduce((a, r) => a + Number(r.timeSpentSeconds ?? 0), 0),
       }

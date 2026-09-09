@@ -1,7 +1,7 @@
 // skills/jira-worklog/scripts/test/preview.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { render } from '../lib/preview.mjs'
+import { render, renderThenPersist } from '../lib/preview.mjs'
 import { emitManifest } from '../cmd/emit.mjs'
 
 const BIN = 'C:/twg/twg.exe'
@@ -95,4 +95,54 @@ test('every entry renders its evidence line', () => {
 
 test('the gate tells the human the planHash must come back via --expect-hash', () => {
   assert.match(render(PLAN, DAY, BIN), /--expect-hash/)
+})
+
+// --- task-14 Fix B: a USER_SUPPLIED comment must be labelled at the gate,
+// the same way derived hours already are. ---
+
+test('a USER_SUPPLIED comment is labelled at the gate', () => {
+  const day = { ...DAY, entries: [{ ...ENTRY, commentSource: 'USER_SUPPLIED' }] }
+  assert.match(render({ ...PLAN, days: [day] }, day, BIN), /USER_SUPPLIED/)
+})
+
+test('an EVIDENCED comment does NOT render the USER_SUPPLIED label - negative control', () => {
+  const day = { ...DAY, entries: [{ ...ENTRY, commentSource: 'EVIDENCED' }] }
+  assert.equal(/USER_SUPPLIED/.test(render({ ...PLAN, days: [day] }, day, BIN)), false)
+})
+
+// --- task-14 Fix A #3: a crash while rendering the preview must never leave a
+// stale plan file behind for a later --expect-hash to be pointed at. The real
+// bug lived in timelog.mjs, which used to writeFileSync the plan BEFORE
+// rendering (and even before calling locateTwg()). renderThenPersist is the
+// extracted, injectable primitive that fixes the ordering: render every day
+// first, and only call the injected `persist` callback if that succeeds. ---
+
+test('renderThenPersist does NOT persist when rendering throws', () => {
+  const badDay = { date: '2026-09-08', existingSeconds: 0, entries: [{ ...ENTRY, started: undefined }] }
+  let persisted = false
+  assert.throws(
+    () => renderThenPersist({ ...PLAN, days: [badDay] }, BIN, () => { persisted = true }),
+    /started/i,
+  )
+  assert.equal(persisted, false, 'a render failure must never reach the persist callback')
+})
+
+test('renderThenPersist DOES persist once every day has rendered successfully (positive control)', () => {
+  let persisted = false
+  const blocks = renderThenPersist(PLAN, BIN, () => { persisted = true })
+  assert.equal(persisted, true)
+  assert.equal(blocks.length, 1)
+  assert.match(blocks[0], /DAY 2026-09-08/)
+})
+
+test('renderThenPersist renders every day before persisting, not just the first', () => {
+  const day2 = { ...DAY, date: '2026-09-09' }
+  let persisted = false
+  const blocks = renderThenPersist({ ...PLAN, days: [DAY, day2] }, BIN, () => { persisted = true })
+  assert.equal(persisted, true)
+  assert.equal(blocks.length, 2)
+})
+
+test('renderThenPersist requires the twg binary path just like render does', () => {
+  assert.throws(() => renderThenPersist(PLAN, undefined, () => {}), /byte-identical|binary/i)
 })

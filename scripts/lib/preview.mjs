@@ -39,7 +39,11 @@ export function render(plan, day, bin) {
   lines.push('')
 
   for (const e of day.entries) {
-    lines.push(`  ${e.key}  ${hours(e.seconds)}  [${e.dedupeState}]${e.hoursSource === 'derived' ? '  (hours DERIVED by the model, not stated by you)' : ''}`)
+    // task-14 Fix B: a USER_SUPPLIED comment is labelled at the gate the same
+    // way DERIVED hours already are - the human must be able to see which
+    // comments they authored and which the tool composed from evidence.
+    const commentLabel = e.commentSource === 'USER_SUPPLIED' ? '  (comment USER_SUPPLIED, not evidence-derived)' : ''
+    lines.push(`  ${e.key}  ${hours(e.seconds)}  [${e.dedupeState}]${e.hoursSource === 'derived' ? '  (hours DERIVED by the model, not stated by you)' : ''}${commentLabel}`)
     if (e.dedupeState === 'EXISTING') {
       lines.push(`      you already have ${hours(e.existingSecondsOnIssue ?? 0)} on this issue for this day`)
     }
@@ -64,4 +68,23 @@ export function render(plan, day, bin) {
   lines.push('  This approves exactly the rows above, for exactly this date.')
   lines.push('  Pass it back verbatim: --expect-hash <planHash> on emit, check-cmd and check-write.')
   return lines.join('\n')
+}
+
+/**
+ * Render every day's preview FIRST, and only call `persist` once every one of
+ * them has rendered without throwing (task-14 Fix A #3).
+ *
+ * timelog.mjs's `plan` command used to writeFileSync the plan to disk, then
+ * call render() per day. Anything that made a day unrenderable — including,
+ * before Fix A's sanitization, an ordinary evidence value like 'R&D' making
+ * buildAddArgv/psQuote refuse the comment — crashed AFTER the file already
+ * existed on disk, leaving a stale plan file that a later --expect-hash could
+ * be pointed at even though no human ever saw its preview. Building every
+ * block before the single `persist` call makes that ordering a property of
+ * this function rather than of the caller remembering to get it right.
+ */
+export function renderThenPersist(plan, bin, persist) {
+  const blocks = plan.days.map((day) => render(plan, day, bin))
+  persist()
+  return blocks
 }

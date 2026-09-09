@@ -59,16 +59,36 @@ function extractKey(token) {
   return { host, key: null }
 }
 
-/** 'https://.../browse/PROJ-323 2h' -> {host, key, seconds, hoursSource} */
-export function parseLine(line) {
-  const trimmed = String(line ?? '').trim()
-  if (!trimmed) throw new Error('cannot parse an empty line')
+// ' :: ' (space colon colon space) introduces an optional user-supplied
+// comment (task-14 Fix B). The hours token still sits between the key and the
+// separator: 'PROJ-323 3h :: reviewed the migrator PR and fixed the parity check'.
+//
+// Searched for on the RAW (not fully-trimmed) line deliberately: trimming the
+// whole line first would eat a trailing ' :: ' with nothing after it, so a
+// human who typed the separator and then left the comment blank would get
+// silent "no comment" instead of a clear refusal.
+const COMMENT_SEP = ' :: '
 
-  const [token, ...rest] = trimmed.split(/\s+/)
+/** 'https://.../browse/PROJ-323 2h' -> {host, key, seconds, hoursSource, comment} */
+export function parseLine(line) {
+  const raw = String(line ?? '')
+  if (!raw.trim()) throw new Error('cannot parse an empty line')
+
+  const sepIndex = raw.indexOf(COMMENT_SEP)
+  let comment = null
+  let head = raw
+  if (sepIndex !== -1) {
+    head = raw.slice(0, sepIndex)
+    comment = raw.slice(sepIndex + COMMENT_SEP.length).trim()
+    if (!comment) throw new Error('empty comment after the :: separator')
+  }
+  head = head.trim()
+
+  const [token, ...rest] = head.split(/\s+/)
   const { host, key } = extractKey(token)
   if (!key) throw new Error(`no issue key found in ${JSON.stringify(token)}`)
 
   const hoursText = rest.join(' ').trim()
-  if (!hoursText) return { host, key, seconds: null, hoursSource: 'derived' }
-  return { host, key, seconds: parseHours(hoursText), hoursSource: 'stated' }
+  if (!hoursText) return { host, key, seconds: null, hoursSource: 'derived', comment }
+  return { host, key, seconds: parseHours(hoursText), hoursSource: 'stated', comment }
 }

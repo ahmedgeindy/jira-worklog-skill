@@ -1,7 +1,7 @@
 // skills/jira-worklog/scripts/test/plan.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { sequenceStarts, validateComment, buildAddArgv, hashPlan } from '../lib/plan.mjs'
+import { sequenceStarts, validateComment, buildAddArgv, hashPlan, sanitizeCommentText } from '../lib/plan.mjs'
 
 test('start times sequence by cumulative duration, not stacked at 09:00', () => {
   const out = sequenceStarts('Asia/Riyadh', '2026-09-08', [
@@ -154,4 +154,68 @@ test('hashPlan covers every field the GUARDS trust, not just the ones Jira recei
   assert.notEqual(h, mutate((c) => { c.days[0].entries[0].dedupeState = 'EXISTING' }), 'dedupeState is the drift baseline')
   assert.notEqual(h, mutate((c) => { c.days[0].entries[0].estimateBefore = 0 }), 'estimateBefore decides if ESTIMATE_CLOBBERED can fire')
   assert.notEqual(h, mutate((c) => { c.days[0].entries[0].existingSecondsOnIssue = 99 }))
+})
+
+// --- task-14 Fix A: a real changelog value must never crash `plan`. ---
+
+test('sanitizeCommentText replaces meaning-preserving characters rather than dropping them', () => {
+  assert.equal(sanitizeCommentText('R&D'), 'RandD')
+  assert.equal(sanitizeCommentText('Q1 > Q2'), 'Q1 gt Q2')
+  assert.equal(sanitizeCommentText('a < b'), 'a lt b')
+  assert.equal(sanitizeCommentText('foo | bar'), 'foo / bar')
+})
+
+test('sanitizeCommentText removes characters with no safe replacement', () => {
+  const s = sanitizeCommentText('cost is $5; say "hi" `now`\r\n')
+  assert.equal(/["`$;\r\n]/.test(s), false)
+  assert.match(s, /cost is 5/)
+})
+
+test('sanitizeCommentText collapses the double spaces a removal can leave behind', () => {
+  assert.equal(sanitizeCommentText('a "b" c'), 'a b c')
+})
+
+test('sanitizeCommentText output is always safe for lib/psline.mjs to render', () => {
+  const inputs = ['R&D', 'Q1 > Q2 < Q3', 'a $summary with `backticks`', 'semi;colon"quote', 'crlf\r\nhere']
+  for (const i of inputs) {
+    assert.equal(/["`$;&|<>\r\n]/.test(sanitizeCommentText(i)), false, `unsafe survivor from ${JSON.stringify(i)}`)
+  }
+})
+
+// --- Fix A #2: sanitizing the comment must not silently break grounding. ---
+
+test('an evidence fragment with an ampersand still grounds the (necessarily rewritten) comment', () => {
+  const ev = [{ source: 'jira-changelog', timestamp: 't', fragment: 'team: R&D' }]
+  const comment = sanitizeCommentText('team: R&D') // what cmd/plan.mjs actually builds and sanitizes
+  const r = validateComment(comment, ev)
+  assert.equal(r.ok, true, r.reason)
+})
+
+test('a claimed filename that only exists post-sanitization is still supported, not falsely flagged', () => {
+  // Concrete hole: fragment 'summary: rework R&D.md' sanitizes to '...RandD.md'.
+  // TOKEN_RE's filename alternative matches 'RandD.md' in the (sanitized)
+  // comment. If the unsupported-token haystack were built from the RAW
+  // fragment ('R&D.md'), this would be falsely rejected as fabricated.
+  const ev = [{ source: 'jira-changelog', timestamp: 't', fragment: 'summary: rework R&D.md' }]
+  const comment = sanitizeCommentText('summary: rework R&D.md')
+  const r = validateComment(comment, ev)
+  assert.equal(r.ok, true, r.reason)
+})
+
+test('sanitization does not weaken the fabrication guard - the existing rejection still holds', () => {
+  // Regression control for the change above: a comment inventing a claim must
+  // still be rejected even though the grounding comparison now sanitizes both
+  // sides. No ampersand or other special character is involved here at all.
+  const ev = [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Progress' }]
+  const r = validateComment('Reviewed status and fixed the auth bug', ev)
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /not grounded/i)
+})
+
+// --- task-14 Fix B: commentSource must be part of the approved hash. ---
+
+test('hashPlan changes when only commentSource changes - approval binds to who wrote the text', () => {
+  const a = { days: [{ date: '2026-09-08', entries: [{ key: 'A-1', seconds: 3600, comment: 'x', commentSource: 'EVIDENCED' }] }] }
+  const b = { days: [{ date: '2026-09-08', entries: [{ key: 'A-1', seconds: 3600, comment: 'x', commentSource: 'USER_SUPPLIED' }] }] }
+  assert.notEqual(hashPlan(a), hashPlan(b))
 })
