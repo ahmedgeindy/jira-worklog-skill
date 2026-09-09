@@ -107,11 +107,15 @@ export function runPlan({ lines, isoDate, deps = {} }) {
       let body
       let commentSource
       if (e.userComment) {
-        body = sanitizeCommentText(e.userComment)
-        if (!body) throw new Error(`comment rejected for ${e.key}: user comment is empty after sanitization`)
+        const userBody = sanitizeCommentText(e.userComment)
+        if (!userBody) throw new Error(`comment rejected for ${e.key}: user comment is empty after sanitization`)
+        // D1b applies to a USER_SUPPLIED comment too - a human wrote it, but the
+        // breach record still needs to land somewhere a manager reads, and the
+        // sanitize pass here is a no-op on the suffix (see appendBreachNote).
+        body = sanitizeCommentText(appendBreachNote(userBody, { status, totalSeconds }))
         commentSource = 'USER_SUPPLIED'
       } else {
-        body = sanitizeCommentText(buildCommentBody(e, { status, totalSeconds }))
+        body = sanitizeCommentText(appendBreachNote(buildCommentBody(e), { status, totalSeconds }))
         const v = validateComment(body, e.evidence)
         if (!v.ok) throw new Error(`comment rejected for ${e.key}: ${v.reason}`)
         commentSource = 'EVIDENCED'
@@ -154,17 +158,35 @@ export function runPlan({ lines, isoDate, deps = {} }) {
  * stripped too, so a real multi-field changelog entry never reaches emit as an
  * unemittable comment.
  *
+ * The EVIDENCED body only - the D1b breach suffix is applied afterwards by
+ * appendBreachNote, to whichever body (this one, or a USER_SUPPLIED comment)
+ * was actually chosen. See appendBreachNote for why that is one function.
+ */
+function buildCommentBody(entry) {
+  const facts = (entry.evidence ?? []).map((e) => e.fragment).join(', ')
+  const body = facts || 'work logged'
+  return body.replace(/;/g, ',')
+}
+
+/**
  * Decision D1b: a SHORT day carries its breach into that day's worklog comment,
  * because a gitignored local ledger is never read by a manager and this is. It
  * states the hours the day will hold and the floor — never the difference,
  * never an issue to put it on (D1a). The spec writes that note with a ';';
  * a ';' would make the whole line unemittable, so it is written with a ','.
+ *
+ * This is the ONLY place that knows that wording, applied to whichever comment
+ * body was chosen - EVIDENCED (buildCommentBody, above) or USER_SUPPLIED (the
+ * human's own ' :: ' text). A SHORT day loses its policy record either way if
+ * this is skipped for one of the two sources, which is exactly the task-14
+ * Fix B regression this closes: USER_SUPPLIED bypassed buildCommentBody (and
+ * therefore this note) entirely.
+ *
+ * The suffix is plain letters/digits/spaces/'.'/',' - nothing sanitizeCommentText
+ * touches - so it survives being appended either before or after the caller's
+ * own sanitize pass, and it can never itself introduce a shell-unsafe character.
  */
-function buildCommentBody(entry, day) {
-  const facts = (entry.evidence ?? []).map((e) => e.fragment).join(', ')
-  let body = facts || 'work logged'
-  if (day?.status === 'SHORT') {
-    body += `. logged ${(Number(day.totalSeconds) / 3600).toFixed(1)}h, below the 7h policy floor`
-  }
-  return body.replace(/;/g, ',')
+function appendBreachNote(body, day) {
+  if (day?.status !== 'SHORT') return body
+  return `${body}. logged ${(Number(day.totalSeconds) / 3600).toFixed(1)}h, below the 7h policy floor`
 }
