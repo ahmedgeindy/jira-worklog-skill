@@ -2,6 +2,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { runPlan } from '../cmd/plan.mjs'
+import { buildAddArgv } from '../lib/plan.mjs'
+import { renderPsCommand } from '../lib/psline.mjs'
+
+const BIN = 'C:/twg/twg.exe'
 
 const ME = 'me-1'
 const IDENT = { accountId: ME, zone: 'Asia/Riyadh', displayName: 'Test' }
@@ -162,4 +166,86 @@ test('two DIFFERENT issues on one day are still fine', () => {
   const p = runPlan({ lines: ['HCFM-323 3h', 'HCFM-324 4h'], isoDate: '2026-09-08', deps: deps() })
   assert.equal(p.days[0].entries.length, 2)
   assert.equal(p.days[0].entries[0].fingerprint === p.days[0].entries[1].fingerprint, false)
+})
+
+// --- task-14 Fix A: real changelog values (&, >, $, ...) must not crash plan. ---
+
+test('a changelog fragment containing an ordinary ampersand produces a valid, renderable comment', () => {
+  const d = deps()
+  d.bundle = () => ({
+    perIssue: { 'HCFM-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'team: R&D' }] },
+    commentSource: 'EVIDENCED', bundleHash: 'bh',
+  })
+  const p = runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: d })
+  const e = p.days[0].entries[0]
+  assert.equal(/["`$;&|<>\r\n]/.test(e.comment), false)
+  assert.match(e.comment, /RandD/)
+  // Must actually render through the SAME renderer emit uses, without throwing.
+  assert.doesNotThrow(() => renderPsCommand(buildAddArgv(e), BIN))
+})
+
+test('changelog fragments with >, $ and | do not crash plan either', () => {
+  const d = deps()
+  d.bundle = () => ({
+    perIssue: { 'HCFM-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'summary: Q1 > Q2, budget $500, a|b' }] },
+    commentSource: 'EVIDENCED', bundleHash: 'bh',
+  })
+  const p = runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: d })
+  const e = p.days[0].entries[0]
+  assert.equal(/["`$;&|<>\r\n]/.test(e.comment), false)
+  assert.doesNotThrow(() => renderPsCommand(buildAddArgv(e), BIN))
+})
+
+// --- task-14 Fix B: thin evidence (a cleared field) is currently unloggable
+// via the EVIDENCED path, and must remain refused there - but become loggable
+// via a user-supplied `::` comment. ---
+
+test('thin evidence (a cleared field) is still REJECTED on the EVIDENCED path - grounding is not weakened', () => {
+  const d = deps()
+  d.bundle = () => ({
+    perIssue: { 'HCFM-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status:' }] },
+    commentSource: 'EVIDENCED', bundleHash: 'bh',
+  })
+  assert.throws(
+    () => runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: d }),
+    /comment rejected|not grounded/i,
+  )
+})
+
+test('the SAME thin-evidence issue is loggable via a user-supplied :: comment, and grounding is skipped', () => {
+  const d = deps()
+  d.bundle = () => ({
+    perIssue: { 'HCFM-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status:' }] },
+    commentSource: 'EVIDENCED', bundleHash: 'bh',
+  })
+  const p = runPlan({
+    lines: ['HCFM-323 3h :: reviewed the migrator PR and fixed the parity check'],
+    isoDate: '2026-09-08', deps: d,
+  })
+  const e = p.days[0].entries[0]
+  assert.equal(e.commentSource, 'USER_SUPPLIED')
+  assert.match(e.comment, /reviewed the migrator PR and fixed the parity check/)
+})
+
+test('an evidence-derived comment (no ::) is still labelled EVIDENCED', () => {
+  const p = runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: deps() })
+  assert.equal(p.days[0].entries[0].commentSource, 'EVIDENCED')
+})
+
+test('a user comment that quotes nothing from the evidence is ACCEPTED - a human wrote it', () => {
+  const p = runPlan({
+    lines: ['HCFM-323 3h :: paired with Sam on an unrelated hotfix'],
+    isoDate: '2026-09-08', deps: deps(),
+  })
+  const e = p.days[0].entries[0]
+  assert.equal(e.commentSource, 'USER_SUPPLIED')
+  assert.match(e.comment, /paired with Sam on an unrelated hotfix/)
+})
+
+test('the raw userComment field never survives into the persisted entry (it is not hashed)', () => {
+  const p = runPlan({
+    lines: ['HCFM-323 3h :: reviewed the migrator PR and fixed the parity check'],
+    isoDate: '2026-09-08', deps: deps(),
+  })
+  assert.equal('userComment' in p.days[0].entries[0], false)
 })

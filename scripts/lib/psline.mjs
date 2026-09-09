@@ -18,6 +18,12 @@ import { assertNoForbiddenTokens } from './twg.mjs'
 // actually runs. Refusing at render time is strictly safer than escaping it.
 const UNSAFE = /["`$;&|<>\r\n\u0000]/
 
+// Exported so callers that build comment text (lib/plan.mjs's
+// sanitizeCommentText / cmd/plan.mjs) can verify a candidate is actually safe
+// BEFORE handing it to psQuote, using the exact same rule rather than a
+// hand-copied approximation of it.
+export const UNSAFE_CHARS = UNSAFE
+
 export function psQuote(arg) {
   const s = String(arg)
   if (UNSAFE.test(s)) {

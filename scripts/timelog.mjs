@@ -9,7 +9,7 @@ import { runPlan } from './cmd/plan.mjs'
 import { emitManifest } from './cmd/emit.mjs'
 import { checkCmd, checkWrite, fileTokenStore } from './cmd/guard.mjs'
 import { runVerify } from './cmd/verify.mjs'
-import { render } from './lib/preview.mjs'
+import { renderThenPersist } from './lib/preview.mjs'
 import { loadPlanFile } from './lib/planfile.mjs'
 import { resolveIdentity } from './lib/identity.mjs'
 import { dayTotal } from './lib/daytotal.mjs'
@@ -83,14 +83,19 @@ if (cmd === 'plan') {
   const lines = readFileSync(0, 'utf8').split('\n').map((s) => s.trim()).filter(Boolean)
   const dates = String(arg('date')).split(',').map((s) => s.trim())
   const plan = runPlan({ lines, isoDate: dates, deps: LIVE_DEPS })
-  const out = arg('out', 'worklog-plan.json')
-  writeFileSync(out, JSON.stringify(plan, null, 2))
   // The gate renders through the SAME renderer, with the SAME binary path, that
   // `emit` will use — so the line the human approves is byte-identical to the
   // line the agent runs.
+  //
+  // locateTwg() and every day's render() run BEFORE the plan file is written
+  // (task-14 Fix A #3): a crash in either — e.g. a comment that reaches
+  // renderPsCommand still carrying an unsafe character — must never leave a
+  // stale plan file on disk that a later --expect-hash could be pointed at.
   const bin = locateTwg()
-  for (const day of plan.days) {
-    process.stdout.write(`${render(plan, day, bin)}\n\n`)
+  const out = arg('out', 'worklog-plan.json')
+  const blocks = renderThenPersist(plan, bin, () => writeFileSync(out, JSON.stringify(plan, null, 2)))
+  for (const block of blocks) {
+    process.stdout.write(`${block}\n\n`)
   }
   process.stdout.write(`plan written to ${out}\n`)
 } else if (cmd === 'emit') {

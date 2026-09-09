@@ -57,3 +57,32 @@ test('a line with no hours yields seconds null and hoursSource derived', () => {
 test('an unresolvable line throws rather than guessing', () => {
   assert.throws(() => parseLine('https://example.com/nothing-here 2h'), /no issue key/i)
 })
+
+// --- task-14 Fix B: an optional user-supplied comment, introduced by ' :: '.
+// The hours token still sits between the key and the separator. ---
+
+test('a :: separator carries a user-supplied comment; hours still sit before it', () => {
+  const r = parseLine('HCFM-323 3h :: reviewed the migrator PR and fixed the parity check')
+  assert.equal(r.key, 'HCFM-323')
+  assert.equal(r.seconds, 10800)
+  assert.equal(r.hoursSource, 'stated')
+  assert.equal(r.comment, 'reviewed the migrator PR and fixed the parity check')
+})
+
+test('a URL line with :: still resolves the key/host and carries the comment', () => {
+  const r = parseLine('https://istnetworks-dev.atlassian.net/browse/HCFM-345 2h :: paired on the fix with Sam')
+  assert.equal(r.key, 'HCFM-345')
+  assert.equal(r.host, 'istnetworks-dev.atlassian.net')
+  assert.equal(r.seconds, 7200)
+  assert.equal(r.comment, 'paired on the fix with Sam')
+})
+
+test('a line with no :: carries comment: null, not undefined or empty string', () => {
+  const r = parseLine('HCFM-323 3h')
+  assert.equal(r.comment, null)
+})
+
+test('an empty comment after :: is refused rather than silently treated as none', () => {
+  assert.throws(() => parseLine('HCFM-323 3h :: '), /comment/i)
+  assert.throws(() => parseLine('HCFM-323 3h ::   '), /comment/i)
+})
