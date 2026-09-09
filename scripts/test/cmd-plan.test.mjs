@@ -249,3 +249,72 @@ test('the raw userComment field never survives into the persisted entry (it is n
   })
   assert.equal('userComment' in p.days[0].entries[0], false)
 })
+
+// --- D1b regression (task-14 Fix B bypassed buildCommentBody entirely for
+// USER_SUPPLIED comments, so a SHORT day logged with the user's own comment
+// silently lost the policy breach record). ---
+
+test('REGRESSION: a USER_SUPPLIED comment on a SHORT day still carries the breach note', () => {
+  const p = runPlan({
+    lines: ['PROJ-323 2h :: paired with Sam on an unrelated hotfix'],
+    isoDate: '2026-09-08', deps: deps(),
+  })
+  assert.equal(p.days[0].status, 'SHORT')
+  const e = p.days[0].entries[0]
+  assert.equal(e.commentSource, 'USER_SUPPLIED')
+  assert.match(e.comment, /paired with Sam on an unrelated hotfix/)
+  assert.match(e.comment, /logged 2\.0h, below the 7h policy floor/)
+})
+
+test('a USER_SUPPLIED comment on a day that MEETS the floor does not carry the breach note', () => {
+  const p = runPlan({
+    lines: ['PROJ-323 7h :: paired with Sam on an unrelated hotfix'],
+    isoDate: '2026-09-08', deps: deps(),
+  })
+  assert.equal(p.days[0].status, 'MEETS')
+  const e = p.days[0].entries[0]
+  assert.equal(e.commentSource, 'USER_SUPPLIED')
+  assert.match(e.comment, /paired with Sam on an unrelated hotfix/)
+  assert.equal(/policy floor/i.test(e.comment), false)
+})
+
+test('an EVIDENCED comment on a SHORT day still carries the breach note and still passes grounding', () => {
+  // If the breach suffix broke validateComment's grounding/token checks, runPlan
+  // would throw here instead of returning - so a returned plan IS the proof that
+  // grounding still holds with the suffix appended.
+  const p = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps() })
+  assert.equal(p.days[0].status, 'SHORT')
+  const e = p.days[0].entries[0]
+  assert.equal(e.commentSource, 'EVIDENCED')
+  assert.match(e.comment, /status: In Progress/)
+  assert.match(e.comment, /logged 2\.0h, below the 7h policy floor/)
+})
+
+test('the rendered PowerShell line for a SHORT-day USER_SUPPLIED entry is still emittable', () => {
+  const p = runPlan({
+    lines: ['PROJ-323 2h :: paired with Sam on an unrelated hotfix'],
+    isoDate: '2026-09-08', deps: deps(),
+  })
+  const e = p.days[0].entries[0]
+  assert.equal(/["`$;&|<>\r\n]/.test(e.comment), false)
+  assert.doesNotThrow(() => renderPsCommand(buildAddArgv(e), BIN))
+})
+
+test('a SHORT day does not let the breach suffix rescue a user comment that sanitizes to nothing', () => {
+  // Pins the ordering inside the USER_SUPPLIED branch: the emptiness check must
+  // run on the user's own text BEFORE appendBreachNote runs, so a comment that
+  // is pure shell-unsafe garbage is still refused - not silently replaced by a
+  // comment consisting of nothing but the policy-floor sentence.
+  assert.throws(
+    () => runPlan({ lines: ['PROJ-323 2h :: $$$'], isoDate: '2026-09-08', deps: deps() }),
+    /comment rejected.*empty after sanitization/i,
+  )
+})
+
+test('a day flipping SHORT to MEETS changes planHash - the comment text is inside the hash', () => {
+  const shortPlan = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 0 }) })
+  const meetsPlan = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 5 * 3600 }) })
+  assert.equal(shortPlan.days[0].status, 'SHORT')
+  assert.equal(meetsPlan.days[0].status, 'MEETS')
+  assert.notEqual(shortPlan.planHash, meetsPlan.planHash)
+})
