@@ -116,9 +116,13 @@ export function dayTotal({ zone, accountId, isoDate, extraKeys = [], deps = {} }
     return { seconds: 0, status: 'UNKNOWN', reason: `JQL day control failed: ${e.message}`, countedWorklogIds: [], candidates: [] }
   }
 
-  // Union with keys this session already touched: JQL is index-backed (agg) and
-  // can lag behind a worklog entered in the Jira UI minutes ago.
-  const candidates = [...new Set([...discovered, ...extraKeys])]
+  // Union with the narrow control's own keys and with keys this session already
+  // touched: JQL is index-backed (agg) and can lag behind a worklog entered in
+  // the Jira UI minutes ago. The wide query has no positive control on its own
+  // completeness, so if it truncates or misses an issue that the narrow query
+  // names, that issue must still get a per-issue read - otherwise its hours
+  // silently vanish from the total while status stays OK.
+  const candidates = [...new Set([...discovered, ...discoveredOnDay, ...extraKeys])]
   if (candidates.length === 0) {
     return { seconds: 0, status: 'OK', reason: 'no candidate issues', countedWorklogIds: [], candidates }
   }

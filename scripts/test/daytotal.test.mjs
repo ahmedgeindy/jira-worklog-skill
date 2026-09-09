@@ -177,6 +177,42 @@ test('a top-level pageInfo.nextCursor is followed, and page 2 is counted', () =>
   assert.deepEqual(r.countedWorklogIds, ['188207', '188208'])
 })
 
+// --- Post-re-review Fix 1: candidates must union the NARROW control's keys
+// too, not just wide discovery + extraKeys. The wide query has no positive
+// control on its own completeness, so a key it misses but the narrow query
+// names must still get a per-issue read - otherwise its hours silently vanish
+// from the total while status stays OK (a silent undercount, worse than an
+// abort: the day looks SHORT and invites re-logging hours already recorded). ---
+
+test('a key named only by the narrow control still gets read - no silent undercount', () => {
+  const readKeys = []
+  const deps = {
+    run: (argv) => {
+      const i = argv.indexOf('--jql')
+      if (i !== -1) {
+        const jql = argv[i + 1]
+        const isWide = jql.includes('>= "2026-09-07"')
+        // Wide discovery finds only PROJ-1; the narrow control also names
+        // PROJ-2, which the wide query missed (truncation / index lag).
+        const issues = isWide ? [{ key: 'PROJ-1' }] : [{ key: 'PROJ-1' }, { key: 'PROJ-2' }]
+        return { exit: 0, data: { issues }, failures: [], meta: null }
+      }
+      const key = argv[argv.indexOf('--issue-id') + 1]
+      readKeys.push(key)
+      return {
+        exit: 0, failures: [], request: null,
+        data: [{ id: `${key}-w`, author: { accountId: ME }, timeSpentSeconds: 3600 }],
+        meta: { pagination: { total: 1 } },
+      }
+    },
+  }
+  const r = dayTotal({ zone: 'Asia/Riyadh', accountId: ME, isoDate: '2026-09-08', deps })
+  assert.equal(r.status, 'OK')
+  assert.equal(r.seconds, 7200, 'PROJ-2, named only by the narrow control, must be counted too')
+  assert.ok(readKeys.includes('PROJ-2'), 'PROJ-2 must actually be read, not just present in candidates')
+  assert.deepEqual(new Set(r.candidates), new Set(['PROJ-1', 'PROJ-2']))
+})
+
 test('a cursor that never advances aborts instead of re-reading page 1 forever', () => {
   const page1 = JSON.parse(readFileSync(new URL('./fixtures/worklog-query-page1.json', import.meta.url)))
   let calls = 0
