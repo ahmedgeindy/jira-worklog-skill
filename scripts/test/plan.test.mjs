@@ -178,7 +178,7 @@ test('sanitizeCommentText collapses the double spaces a removal can leave behind
 test('sanitizeCommentText output is always safe for lib/psline.mjs to render', () => {
   const inputs = ['R&D', 'Q1 > Q2 < Q3', 'a $summary with `backticks`', 'semi;colon"quote', 'crlf\r\nhere']
   for (const i of inputs) {
-    assert.equal(/["`$;&|<>\r\n]/.test(sanitizeCommentText(i)), false, `unsafe survivor from ${JSON.stringify(i)}`)
+    assert.equal(/["`$;&|<>\r\n\u0000]/.test(sanitizeCommentText(i)), false, `unsafe survivor from ${JSON.stringify(i)}`)
   }
 })
 
