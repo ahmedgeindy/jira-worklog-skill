@@ -1,19 +1,30 @@
 // skills/jira-worklog/scripts/lib/preview.mjs
 import { buildAddArgv, hashPlan } from './plan.mjs'
+import { renderPsCommand } from './psline.mjs'
 import { weekdayOf, isWorkday } from './tz.mjs'
 
 const FLOOR_SECONDS = 7 * 3600
+// Indent of the command line inside a preview block. The command itself is
+// byte-identical to cmd/emit.mjs's manifest line; only this prefix differs.
+const CMD_INDENT = '      '
 
 const hours = (s) => `${(s / 3600).toFixed(1)}h`
 
-/** Render an argv array as the literal command, with no shell quoting games. */
-export function renderArgv(argv) {
-  return ['twg', ...argv]
-    .map((t) => (/\s/.test(t) ? `"${t}"` : t))
-    .join(' ')
-}
-
-export function render(plan, day) {
+/**
+ * Render the approval gate for one day.
+ *
+ * `bin` is REQUIRED and is the same twg path cmd/emit.mjs is given, because the
+ * line rendered here goes through the SAME renderer (lib/psline.mjs) as the line
+ * the agent actually runs. Previously this module had its own `twg … "x"`
+ * renderer while emit produced `& 'bin' 'x'`, so the human approved bytes that
+ * were never executed and "preview == write" was not a property of anything.
+ */
+export function render(plan, day, bin) {
+  if (!bin) {
+    throw new Error(
+      'render requires the twg binary path: the previewed line must be byte-identical to the emitted write line',
+    )
+  }
   const lines = []
   const weekday = weekdayOf(day.date)
   const planned = day.entries.reduce((a, e) => a + Number(e.seconds), 0)
@@ -36,7 +47,7 @@ export function render(plan, day) {
     for (const ev of e.evidence ?? []) {
       lines.push(`      evidence: ${ev.source} @ ${ev.timestamp} :: ${ev.fragment}`)
     }
-    lines.push(`      ${renderArgv(buildAddArgv(e))}`)
+    lines.push(`${CMD_INDENT}${renderPsCommand(buildAddArgv(e), bin)}`)
     lines.push('')
   }
 
@@ -51,5 +62,6 @@ export function render(plan, day) {
   lines.push('')
   lines.push(`  planHash: ${hashPlan(plan)}`)
   lines.push('  This approves exactly the rows above, for exactly this date.')
+  lines.push('  Pass it back verbatim: --expect-hash <planHash> on emit, check-cmd and check-write.')
   return lines.join('\n')
 }

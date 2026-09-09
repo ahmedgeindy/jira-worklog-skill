@@ -24,6 +24,24 @@ export function runPlan({ lines, isoDate, deps = {} }) {
 
   const days = dates.map((date) => {
     const parsed = lines.map((l) => parseLine(l))
+
+    // Two lines for the same issue on the same day derive the SAME fingerprint
+    // when the hours match, so emit would print the identical write twice and
+    // check-write would then find two rows carrying one marker. With different
+    // hours they collide differently: the first write flips the second entry's
+    // live dedupe state, so check-cmd aborts the day halfway through. Refuse
+    // here, where nothing has been written yet.
+    const seenKeys = new Set()
+    for (const p of parsed) {
+      if (seenKeys.has(p.key)) {
+        throw new Error(
+          `refusing ${p.key} twice on ${date}: one issue may appear at most once per day in a plan. ` +
+          'Combine the lines into a single total, or add the second block by re-running plan ' +
+          'after the first one has landed (decision D1c).',
+        )
+      }
+      seenKeys.add(p.key)
+    }
     const keys = parsed.map((p) => p.key)
 
     const evidence = deps.bundle({ isoDate: date, keys, zone: identity.zone, accountId: identity.accountId })
@@ -54,6 +72,14 @@ export function runPlan({ lines, isoDate, deps = {} }) {
 
     entries = sequenceStarts(identity.zone, date, entries)
 
+    // The day verdict is computed BEFORE the comments, because decision D1b puts
+    // the breach INTO that day's worklog comments. Every entry's seconds has
+    // already been validated as non-null by the map above, so this sum is real
+    // arithmetic and not a null coercion.
+    const plannedSeconds = entries.reduce((a, e) => a + Number(e.seconds), 0)
+    const totalSeconds = dt.seconds + plannedSeconds
+    const status = totalSeconds < FLOOR_SECONDS ? 'SHORT' : 'MEETS'
+
     entries = entries.map((e) => {
       assertNotFuture(e.started, nowMs)
       const fp = fingerprint({ accountId: identity.accountId, key: e.key, isoDate: date, seconds: e.seconds })
@@ -65,7 +91,7 @@ export function runPlan({ lines, isoDate, deps = {} }) {
       // would make every comment fail as "names things absent from the evidence bundle".
       // The marker is tool metadata, not a claim that needs grounding, so it is appended
       // only after validation passes.
-      const body = buildCommentBody(e)
+      const body = buildCommentBody(e, { status, totalSeconds })
       const v = validateComment(body, e.evidence)
       if (!v.ok) throw new Error(`comment rejected for ${e.key}: ${v.reason}`)
       const comment = `${body} ${markerFor(fp)}`
@@ -78,13 +104,10 @@ export function runPlan({ lines, isoDate, deps = {} }) {
       }
     })
 
-    const planned = entries.reduce((a, e) => a + e.seconds, 0)
-    const total = dt.seconds + planned
-
     return {
       date, weekday: weekdayOf(date), isWorkday: isWorkday(date),
-      existingSeconds: dt.seconds, plannedSeconds: planned, totalSeconds: total,
-      status: total < FLOOR_SECONDS ? 'SHORT' : 'MEETS',
+      existingSeconds: dt.seconds, plannedSeconds, totalSeconds,
+      status,
       commentSource: evidence.commentSource, bundleHash: evidence.bundleHash,
       entries,
     }
@@ -103,9 +126,18 @@ export function runPlan({ lines, isoDate, deps = {} }) {
  * separator). Any semicolon that survives from a fragment's own text is
  * stripped too, so a real multi-field changelog entry never reaches emit as an
  * unemittable comment.
+ *
+ * Decision D1b: a SHORT day carries its breach into that day's worklog comment,
+ * because a gitignored local ledger is never read by a manager and this is. It
+ * states the hours the day will hold and the floor — never the difference,
+ * never an issue to put it on (D1a). The spec writes that note with a ';';
+ * a ';' would make the whole line unemittable, so it is written with a ','.
  */
-function buildCommentBody(entry) {
+function buildCommentBody(entry, day) {
   const facts = (entry.evidence ?? []).map((e) => e.fragment).join(', ')
-  const body = facts || 'work logged'
+  let body = facts || 'work logged'
+  if (day?.status === 'SHORT') {
+    body += `. logged ${(Number(day.totalSeconds) / 3600).toFixed(1)}h, below the 7h policy floor`
+  }
   return body.replace(/;/g, ',')
 }

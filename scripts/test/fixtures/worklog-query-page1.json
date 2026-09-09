@@ -1,0 +1,24 @@
+{
+  "_note": "Shape of page 1 of a paged `jira workitem worklog query`. pageInfo is TOP-LEVEL in the response envelope, NOT under meta (probed live 2026-09-09: meta.pageInfo does not exist). meta.pagination.total is the FILTERED count for the requested window, not the issue's lifetime worklog count.",
+  "data": [
+    {
+      "id": "188207",
+      "issueId": "57826",
+      "author": { "accountId": "712020:862ee292-a94d-488e-9f54-f5cb50dfd07b", "displayName": "Ahmed Genidy" },
+      "started": "2026-09-08T09:00:00.000+0300",
+      "timeSpentSeconds": 10800,
+      "timeSpent": "3h"
+    }
+  ],
+  "request": {
+    "issueId": "HCFM-1",
+    "startedAfter": 1788814799999,
+    "startedBefore": 1788901200000,
+    "first": 100
+  },
+  "meta": {
+    "backend": "rest-v3",
+    "pagination": { "total": 2, "maxResults": 5000 }
+  },
+  "pageInfo": { "hasNextPage": true, "nextCursor": "cursor-page-2" }
+}

@@ -68,7 +68,12 @@ export function queryWindow(zone, isoDate) {
 /** The only known-good --started format, from live reads. */
 export function startedString(zone, isoDate, hms) {
   assertIsoDate(isoDate)
-  if (!/^\d{2}:\d{2}:\d{2}$/.test(hms)) throw new Error(`expected HH:mm:ss, got ${hms}`)
+  // The hour is bounded at 23 on purpose: 24:00:00 formats into a string that
+  // PARSES as 00:00 the NEXT day, filing the worklog onto the wrong Jira date
+  // while still looking like a valid past instant to assertNotFuture.
+  if (!/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(hms)) {
+    throw new Error(`expected HH:mm:ss inside a single day, got ${hms}`)
+  }
   return `${isoDate}T${hms}.000${offsetFor(zone, isoDate)}`
 }
 

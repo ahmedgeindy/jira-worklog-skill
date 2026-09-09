@@ -12,12 +12,16 @@ export function runVerify({ plan, deps }) {
     const dt = deps.dayTotal({
       zone: plan.zone, accountId: plan.accountId, isoDate: d.date, extraKeys: keys,
     })
-    const verdict = dt.status !== 'OK'
-      ? 'UNKNOWN'
-      : (dt.seconds >= FLOOR_SECONDS ? 'PASS' : 'SHORT')
+    const ok = dt.status === 'OK'
+    const verdict = !ok ? 'UNKNOWN' : (dt.seconds >= FLOOR_SECONDS ? 'PASS' : 'SHORT')
     return {
       date: d.date, verdict,
-      serverSeconds: dt.seconds, serverHours: (dt.seconds / 3600).toFixed(2),
+      // An UNKNOWN read carries NO number. dayTotal returns seconds: 0 on every
+      // UNKNOWN branch, and rendering that as `serverHours: "0.00"` beside
+      // `verdict: "UNKNOWN"` invites exactly the false-zero reading spec 3.3
+      // exists to forbid: a reader skims the number, not the verdict.
+      serverSeconds: ok ? dt.seconds : null,
+      serverHours: ok ? (dt.seconds / 3600).toFixed(2) : null,
       reason: dt.reason, countedWorklogIds: dt.countedWorklogIds ?? [],
     }
   })

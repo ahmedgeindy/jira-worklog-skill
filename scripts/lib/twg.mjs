@@ -2,7 +2,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { FORBIDDEN_TOKENS, FORBIDDEN_SUBCOMMANDS } from './version.mjs'
+import { FORBIDDEN_TOKENS, FORBIDDEN_SUBCOMMANDS, UNSPAWNABLE_SUBCOMMANDS } from './version.mjs'
 
 /** Locate twg. Bare name first, then the documented Windows install path. */
 export function locateTwg() {
@@ -21,15 +21,17 @@ export function locateTwg() {
     if (existsSync(c)) return c
   }
   throw new Error(
-    'twg not found. Tried PATH and %LOCALAPPDATA%\\Programs\\twg\\bin\\twg.exe',
+    'twg not found. Tried PATH and %LOCALAPPDATA%\Programs\twg\bin\twg.exe',
   )
 }
 
 /**
- * Refuse to construct an argv this skill must never issue. This is the rail
- * that makes "never delete a worklog" an invariant instead of an instruction.
+ * The token / subcommand checks that apply to any constructed argv, including
+ * one that will only ever be RENDERED as text (cmd/emit.mjs's manifest).
+ * This is the rail that makes "never delete a worklog" an invariant instead of
+ * an instruction.
  */
-export function assertArgvSafe(argv) {
+export function assertNoForbiddenTokens(argv) {
   for (const tok of argv) {
     const t = String(tok)
     if (FORBIDDEN_TOKENS.includes(t)) {
@@ -42,6 +44,28 @@ export function assertArgvSafe(argv) {
     if (FORBIDDEN_SUBCOMMANDS.includes(sub)) {
       throw new Error(`forbidden worklog subcommand: ${sub}`)
     }
+  }
+}
+
+/**
+ * The check on every argv this process is about to SPAWN.
+ *
+ * On top of the forbidden tokens it refuses `worklog add` outright. There is no
+ * write path in this tree today — the agent runs the write itself as its own,
+ * separately-prompted tool call — but "there is no such caller" is an absence,
+ * not an invariant. With this, a future one-line `run(buildAddArgv(e))` throws
+ * instead of spawning an unprompted Jira write from the allowlisted `node`
+ * process. buildAddArgv and the PowerShell renderer keep working: they only
+ * build text, and text cannot write to Jira.
+ */
+export function assertArgvSafe(argv) {
+  assertNoForbiddenTokens(argv)
+  const wl = argv.indexOf('worklog')
+  if (wl !== -1 && UNSPAWNABLE_SUBCOMMANDS.includes(argv[wl + 1])) {
+    throw new Error(
+      `refusing to SPAWN a worklog ${argv[wl + 1]}: this process never writes to Jira. ` +
+      'Render the line with cmd/emit.mjs and let the human approve the write.',
+    )
   }
 }
 
@@ -84,6 +108,26 @@ export function parseStdout(raw) {
 }
 
 /**
+ * Shape a parsed payload into the envelope callers read.
+ *
+ * pageInfo is TOP-LEVEL in the response envelope (probed live 2026-09-09:
+ * meta.pageInfo does not exist). Surfacing only meta.* is what made
+ * lib/daytotal.mjs's pagination loop dead code — its cursor was always null, so
+ * page 2 could never be fetched and a >100-row day silently truncated. Both
+ * placements are read here so a shape change on either side still paginates.
+ */
+export function toEnvelope(payload) {
+  const envelope = (payload && !Array.isArray(payload)) ? payload : { data: payload }
+  return {
+    data: envelope.data ?? payload,
+    request: envelope.request ?? null,
+    meta: envelope.meta ?? null,
+    pageInfo: envelope.pageInfo ?? envelope.meta?.pageInfo ?? null,
+    failures: envelope.failures ?? [],
+  }
+}
+
+/**
  * Run a twg command. Returns the parsed envelope.
  * exit 0 = ok, 1 = error, 3 = partial. 3, a non-empty failures[], or
  * exact:false are all UNKNOWN to callers — never treat them as empty results.
@@ -115,15 +159,7 @@ export function run(argv, opts = {}) {
     }
   }
 
-  const envelope = (payload && !Array.isArray(payload)) ? payload : { data: payload }
-  return {
-    exit: res.status,
-    data: envelope.data ?? payload,
-    request: envelope.request ?? null,
-    meta: envelope.meta ?? null,
-    failures: envelope.failures ?? [],
-    stderr: res.stderr,
-  }
+  return { ...toEnvelope(payload), exit: res.status, stderr: res.stderr }
 }
 
 /** Throw unless the result is a trustworthy, complete read. */

@@ -16,7 +16,13 @@ export const FORBIDDEN_TOKENS = Object.freeze([
   '--override-editable', '--input-json', '--variables-json', '--time-spent', '2>&1',
 ])
 
+// Never constructible at all, in any form, not even as rendered text.
 export const FORBIDDEN_SUBCOMMANDS = Object.freeze(['delete', 'update'])
+
+// Constructible as TEXT (cmd/emit.mjs renders the line a human approves and the
+// agent then runs as its own tool call), but never spawnable by this process.
+// See lib/twg.mjs's assertArgvSafe.
+export const UNSPAWNABLE_SUBCOMMANDS = Object.freeze(['add'])
 
 /**
  * Assert the live `twg help describe "jira workitem worklog add"` output still
@@ -26,7 +32,7 @@ export const FORBIDDEN_SUBCOMMANDS = Object.freeze(['delete', 'update'])
 export function checkContract(helpText) {
   const missing = REQUIRED_ADD_FLAGS.filter(
     // word-boundary match so `--time-spent` never satisfies `--time-spent-seconds`
-    (flag) => !new RegExp(`${flag}(?![\\w-])`).test(helpText),
+    (flag) => !new RegExp(`${flag}(?![\w-])`).test(helpText),
   )
   return { ok: missing.length === 0, missing }
 }

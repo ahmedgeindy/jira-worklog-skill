@@ -10,6 +10,7 @@ import { emitManifest } from './cmd/emit.mjs'
 import { checkCmd, checkWrite, fileTokenStore } from './cmd/guard.mjs'
 import { runVerify } from './cmd/verify.mjs'
 import { render } from './lib/preview.mjs'
+import { loadPlanFile } from './lib/planfile.mjs'
 import { resolveIdentity } from './lib/identity.mjs'
 import { dayTotal } from './lib/daytotal.mjs'
 import { checkWindow } from './lib/dedup.mjs'
@@ -52,8 +53,25 @@ const LIVE_DEPS = {
 
 const cmd = process.argv[2]
 
-function loadPlan() {
-  return JSON.parse(readFileSync(arg('plan', 'worklog-plan.json'), 'utf8'))
+/**
+ * Decision D3a: the planHash prefix printed at the gate must come back via
+ * --expect-hash. loadPlanFile also re-derives the hash and refuses a plan file
+ * that no longer matches its own stored planHash, so a hand-edited `seconds`,
+ * accountId or dedupeState cannot reach a guard. Both gates are mandatory on
+ * every command that stands next to a write.
+ */
+function loadPlan({ requireExpectHash = true } = {}) {
+  try {
+    return loadPlanFile({
+      path: arg('plan', 'worklog-plan.json'),
+      expectHash: arg('expect-hash'),
+      requireExpectHash,
+    })
+  } catch (e) {
+    process.stderr.write(`${e.message}\n`)
+    process.exit(1)
+  }
+  return null // unreachable; keeps the control flow explicit
 }
 
 /** Approval tokens live beside the plan file, so check-cmd and check-write agree on where. */
@@ -67,8 +85,12 @@ if (cmd === 'plan') {
   const plan = runPlan({ lines, isoDate: dates, deps: LIVE_DEPS })
   const out = arg('out', 'worklog-plan.json')
   writeFileSync(out, JSON.stringify(plan, null, 2))
+  // The gate renders through the SAME renderer, with the SAME binary path, that
+  // `emit` will use — so the line the human approves is byte-identical to the
+  // line the agent runs.
+  const bin = locateTwg()
   for (const day of plan.days) {
-    process.stdout.write(`${render(plan, day)}\n\n`)
+    process.stdout.write(`${render(plan, day, bin)}\n\n`)
   }
   process.stdout.write(`plan written to ${out}\n`)
 } else if (cmd === 'emit') {
@@ -87,7 +109,9 @@ if (cmd === 'plan') {
   process.stdout.write(r.ok ? `OK worklog ${r.worklogId}\n` : `FAIL: ${r.reason}\n`)
   process.exit(r.ok ? 0 : 1)
 } else if (cmd === 'verify') {
-  const plan = loadPlan()
+  // Read-only and post-hoc: the plan-file self-check still runs, but there is no
+  // approval to bind here, so --expect-hash is optional (and honoured if given).
+  const plan = loadPlan({ requireExpectHash: false })
   const r = runVerify({ plan, deps: { dayTotal } })
   process.stdout.write(`${JSON.stringify({ days: r.days, caveat: r.caveat }, null, 2)}\n`)
   process.exit(r.exitCode)
@@ -95,10 +119,14 @@ if (cmd === 'plan') {
   process.stderr.write(
     `unknown command: ${cmd ?? '(none)'}\n` +
     'usage: timelog.mjs plan --date YYYY-MM-DD --out plan.json\n' +
-    '       timelog.mjs emit --plan plan.json --date YYYY-MM-DD\n' +
-    '       timelog.mjs check-cmd --plan plan.json --date YYYY-MM-DD --cmd "<literal line>"\n' +
-    '       timelog.mjs check-write --plan plan.json --date YYYY-MM-DD --key <KEY>\n' +
-    '       timelog.mjs verify --plan plan.json\n',
+    '       timelog.mjs emit --plan plan.json --date YYYY-MM-DD --expect-hash <planHash>\n' +
+    '       timelog.mjs check-cmd --plan plan.json --date YYYY-MM-DD --expect-hash <planHash> --cmd "<literal line>"\n' +
+    '       timelog.mjs check-write --plan plan.json --date YYYY-MM-DD --expect-hash <planHash> --key <KEY>\n' +
+    '       timelog.mjs verify --plan plan.json\n' +
+    '\n' +
+    '--expect-hash is the planHash printed at the approval gate. It is REQUIRED on\n' +
+    'emit, check-cmd and check-write: one approval covers exactly the rows that were\n' +
+    'on screen, for exactly that date (decision D3a).\n',
   )
   process.exit(2)
 }

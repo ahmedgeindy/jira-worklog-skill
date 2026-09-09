@@ -54,7 +54,31 @@ export function classify(rows, { accountId, seconds, fp }) {
   return 'EXISTING'
 }
 
-/** Live REST read of the (issue, day) window. Never a local ledger. */
+/** Recognise the row array in either response shape, or refuse. */
+function extractRows(data) {
+  if (Array.isArray(data)) return data
+  if (data && Array.isArray(data.worklogs)) return data.worklogs
+  throw new Error(
+    `UNKNOWN: unrecognised worklog query shape (${JSON.stringify(data)?.slice(0, 120)}); ` +
+    'an unreadable response is not an empty day',
+  )
+}
+
+/**
+ * Live REST read of the (issue, day) window. Never a local ledger.
+ *
+ * This is the ONLY live read standing between a re-run and a double-log:
+ * classify([]) is CLEAR, and CLEAR authorises the write. So the zero it can
+ * return must be positively controlled (spec 3.3), exactly as
+ * lib/daytotal.mjs's pageWorklogs does — before this, an unexpected shape
+ * returned [] and a truncated page returned a short list, and both read as
+ * "nothing here, go ahead".
+ *
+ * meta.pagination.total is the FILTERED count, not the issue's lifetime count
+ * (probed live 2026-09-09: an issue with 12 lifetime worklogs returned total 1
+ * for a one-day window), so comparing it against rows.length is sound and does
+ * not misfire.
+ */
 export function checkWindow({ key, accountId, zone, isoDate, deps = {} }) {
   const run = deps.run ?? realRun
   const w = queryWindow(zone, isoDate)
@@ -69,5 +93,22 @@ export function checkWindow({ key, accountId, zone, isoDate, deps = {} }) {
   const res = run(argv)
   assertTrustworthy(res, `dedup read ${key}`)
   if (res.request) assertEcho({ startedAfter: w.after, startedBefore: w.before }, res.request)
-  return Array.isArray(res.data) ? res.data : (res.data?.worklogs ?? [])
+
+  const rows = extractRows(res.data)
+
+  const declared = res.meta?.pagination?.total
+  if (typeof declared !== 'number' || !Number.isInteger(declared)) {
+    throw new Error(
+      `UNKNOWN: dedup read ${key} carried no meta.pagination.total, so its row count cannot be ` +
+      'positively controlled. A zero that cannot be proven is not a zero.',
+    )
+  }
+  if (rows.length !== declared) {
+    throw new Error(
+      `UNKNOWN: dedup read ${key} returned ${rows.length} row(s) but meta.pagination.total is ${declared}; ` +
+      'the window is truncated or filtered differently than assumed — refusing to call it CLEAR.',
+    )
+  }
+
+  return rows
 }
