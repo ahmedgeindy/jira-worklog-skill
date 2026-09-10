@@ -82,7 +82,17 @@ function tokenStoreForPlan() {
 if (cmd === 'plan') {
   const lines = readFileSync(0, 'utf8').split('\n').map((s) => s.trim()).filter(Boolean)
   const dates = String(arg('date')).split(',').map((s) => s.trim())
-  const plan = runPlan({ lines, isoDate: dates, deps: LIVE_DEPS })
+  // Every refusal in runPlan is a DECISION the operator has to act on - a
+  // duplicate key, an UNKNOWN day total, a site mismatch, a future date. Those
+  // must read as instructions, not as a Node stack trace: the operator should
+  // never have to interpret an exception to learn what the tool refused and why.
+  let plan
+  try {
+    plan = runPlan({ lines, isoDate: dates, deps: LIVE_DEPS })
+  } catch (e) {
+    process.stderr.write(`PLAN REFUSED: ${e.message}\n\nNothing was written. No plan file was created.\n`)
+    process.exit(2)
+  }
   // The gate renders through the SAME renderer, with the SAME binary path, that
   // `emit` will use — so the line the human approves is byte-identical to the
   // line the agent runs.
