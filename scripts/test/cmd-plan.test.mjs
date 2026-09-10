@@ -318,3 +318,126 @@ test('a day flipping SHORT to MEETS changes planHash - the comment text is insid
   assert.equal(meetsPlan.days[0].status, 'MEETS')
   assert.notEqual(shortPlan.planHash, meetsPlan.planHash)
 })
+
+// --- Feature 1: an explicit '@HH:MM' on the input line reaches `started`
+// through the full runPlan pipeline (parseLine -> entries -> sequenceStarts),
+// not just in a unit test of sequenceStarts against a hand-built entry. ---
+
+test('an @HH:MM on the input line pins started end-to-end through runPlan', () => {
+  const p = runPlan({ lines: ['HCFM-323 1h @11:00 :: daily standup'], isoDate: '2026-09-08', deps: deps() })
+  const e = p.days[0].entries[0]
+  assert.equal(e.started, '2026-09-08T11:00:00.000+0300')
+  assert.equal(e.startAt, '11:00')
+  assert.match(e.comment, /daily standup/)
+})
+
+test('a future @HH:MM on the CURRENT day is refused, same as any other future start', () => {
+  // deps().now() is fixed at 2026-09-09T10:00:00+03:00.
+  assert.throws(
+    () => runPlan({ lines: ['HCFM-323 1h @11:00'], isoDate: '2026-09-09', deps: deps() }),
+    /future/i,
+  )
+})
+
+test('a past @HH:MM on the current day (before "now") is accepted', () => {
+  const p = runPlan({ lines: ['HCFM-323 1h @09:00'], isoDate: '2026-09-09', deps: deps() })
+  assert.equal(p.days[0].entries[0].started, '2026-09-09T09:00:00.000+0300')
+})
+
+// --- Feature 2: the four duplicate-guard cases. ---
+
+test('case 1: same issue twice, NEITHER with @HH:MM, is refused (today\'s original message, unchanged)', () => {
+  assert.throws(
+    () => runPlan({ lines: ['HCFM-323 3h', 'HCFM-323 2h'], isoDate: '2026-09-08', deps: deps() }),
+    /at most once per day/i,
+  )
+})
+
+test('case 2: same issue twice, BOTH with DIFFERENT @HH:MM, is ALLOWED', () => {
+  const p = runPlan({
+    lines: ['HCFM-323 1h @11:00 :: daily standup', 'HCFM-323 2.5h @13:00 :: STC-BH meeting'],
+    isoDate: '2026-09-08', deps: deps(),
+  })
+  assert.equal(p.days[0].entries.length, 2)
+  assert.equal(p.days[0].entries[0].started, '2026-09-08T11:00:00.000+0300')
+  assert.equal(p.days[0].entries[1].started, '2026-09-08T13:00:00.000+0300')
+  assert.notEqual(p.days[0].entries[0].fingerprint, p.days[0].entries[1].fingerprint)
+})
+
+test('case 3: same issue twice, BOTH with the SAME @HH:MM, is refused as a genuine collision', () => {
+  assert.throws(
+    () => runPlan({
+      lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-323 2h @11:00 :: something else'],
+      isoDate: '2026-09-08', deps: deps(),
+    }),
+    /identical start time|same instant/i,
+  )
+})
+
+test('case 4: same issue twice, ONE with @HH:MM and one WITHOUT, is refused', () => {
+  assert.throws(
+    () => runPlan({
+      lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-323 2h :: something else'],
+      isoDate: '2026-09-08', deps: deps(),
+    }),
+    /sequencer|pins @11:00/i,
+  )
+})
+
+test('case 4 is refused regardless of which line (pinned or implicit) comes first', () => {
+  assert.throws(
+    () => runPlan({
+      lines: ['HCFM-323 2h :: something else', 'HCFM-323 1h @11:00 :: standup'],
+      isoDate: '2026-09-08', deps: deps(),
+    }),
+    /sequencer|pins @11:00/i,
+  )
+})
+
+test('two DIFFERENT issues, each with the same @HH:MM as each other, is fine (the guard is per-issue)', () => {
+  const p = runPlan({
+    lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-324 1h @11:00 :: standup'],
+    isoDate: '2026-09-08', deps: deps(),
+  })
+  assert.equal(p.days[0].entries.length, 2)
+})
+
+// --- Must-not-regress: equal-duration entries that pass the case-2 ALLOW
+// share a dedup fingerprint (lib/dedup.mjs#fingerprint excludes `started`),
+// so they are refused at PLAN time rather than left to fail at write time. ---
+
+test('two case-2-allowed entries with the SAME duration are refused: identical dedup fingerprint', () => {
+  assert.throws(
+    () => runPlan({
+      lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-323 1h @13:00 :: something else'],
+      isoDate: '2026-09-08', deps: deps(),
+    }),
+    /same dedup fingerprint|SAME dedup fingerprint/i,
+  )
+})
+
+test('control: two case-2-allowed entries with DIFFERENT durations are fine (no fingerprint collision)', () => {
+  const p = runPlan({
+    lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-323 2.5h @13:00 :: something else'],
+    isoDate: '2026-09-08', deps: deps(),
+  })
+  assert.equal(p.days[0].entries.length, 2)
+  assert.notEqual(p.days[0].entries[0].fingerprint, p.days[0].entries[1].fingerprint)
+})
+
+// --- Must-not-regress: duplicate keys must not double-count server time. ---
+
+test('two allowed entries for the same key pass ONE deduped key into dayTotal.extraKeys, not two', () => {
+  let seenExtraKeys = null
+  const d = deps()
+  const realDayTotal = d.dayTotal
+  d.dayTotal = (args) => {
+    seenExtraKeys = args.extraKeys
+    return realDayTotal(args)
+  }
+  runPlan({
+    lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-323 2.5h @13:00 :: something else'],
+    isoDate: '2026-09-08', deps: d,
+  })
+  assert.deepEqual(seenExtraKeys, ['HCFM-323'])
+})

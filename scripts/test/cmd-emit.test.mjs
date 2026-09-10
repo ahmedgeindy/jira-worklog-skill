@@ -302,6 +302,73 @@ test('checkWrite throws if deps.tokens is missing, rather than silently skipping
   assert.throws(() => checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps }), /deps\.tokens/)
 })
 
+// --- Feature 2 fallout: cmd/plan.mjs now allows more than one entry per
+// (key, day) when each carries a distinct '@HH:MM'. `key` alone can then no
+// longer name exactly one entry for check-write's post-write reconciliation -
+// it must disambiguate by fingerprint instead of silently guessing the first
+// match (which would check the WRONG entry's estimate/fingerprint whenever
+// the agent confirms the second write). ---
+
+function pushSecondEntry(p, over = {}) {
+  p.days[0].entries.push({
+    key: 'HCFM-323', numericId: '999', site: 'x.atlassian.net',
+    seconds: 9000, started: '2026-09-08T13:00:00.000+0300', startAt: '13:00',
+    comment: `paired with Sam ${markerFor('def456')}`,
+    fingerprint: 'def456', dedupeState: 'CLEAR', hoursSource: 'stated',
+    existingSecondsOnIssue: 0, evidence: [], estimateBefore: 0,
+    ...over,
+  })
+  p.planHash = hashPlan(p)
+  return p
+}
+
+test('check-write refuses to guess when the plan has more than one entry for --key on --date, and no --fingerprint was given', () => {
+  const p = pushSecondEntry(makePlan())
+  const deps = { checkWindow: () => [], readEstimate: () => 0, tokens: makeTokenStore(['abc123', 'def456']) }
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /2 entries/i)
+  assert.match(r.reason, /--fingerprint/)
+})
+
+test('check-write disambiguates by --fingerprint when the plan has two entries for the same key/day', () => {
+  const p = pushSecondEntry(makePlan())
+  const deps = {
+    checkWindow: () => [{
+      id: '5002', author: { accountId: ME }, timeSpentSeconds: 9000,
+      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `x ${markerFor('def456')}` }] }] },
+    }],
+    readEstimate: () => 0,
+    tokens: makeTokenStore(['def456']),
+  }
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', fingerprint: 'def456', deps })
+  assert.equal(r.ok, true)
+  assert.equal(r.worklogId, '5002')
+})
+
+test('check-write with an UNKNOWN --fingerprint against a multi-entry key fails cleanly, not by picking a wrong entry', () => {
+  const p = pushSecondEntry(makePlan())
+  const deps = { checkWindow: () => [], readEstimate: () => 0, tokens: makeTokenStore(['abc123', 'def456']) }
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', fingerprint: 'nonexistent', deps })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /none with fingerprint/i)
+})
+
+test('check-write still works with no --fingerprint when the key has exactly one entry (backward compatible)', () => {
+  const p = makePlan()
+  const deps = {
+    checkWindow: () => [{
+      id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200,
+      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `x ${markerFor('abc123')}` }] }] },
+    }],
+    readEstimate: () => 0,
+    tokens: makeTokenStore(['abc123']),
+  }
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  assert.equal(r.ok, true)
+  assert.equal(r.worklogId, '5001')
+})
+
 // The real, disk-backed token store. Every test above uses the in-memory double;
 // this exercises the actual production path (put/has/take against a real file
 // named `.jira-worklog-approved-<fingerprint>`) in an isolated temp dir, so a bug

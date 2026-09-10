@@ -12,19 +12,42 @@ function hms(totalSeconds) {
 }
 
 /**
- * Sequence entries from 09:00 by cumulative planned duration.
- * Stacking every entry at 09:00 asserts simultaneous work sessions; 09:00 also
- * keeps every entry far from both exclusive filter bounds and from midnight.
+ * Sequence entries from 09:00 by cumulative planned duration, EXCEPT an entry
+ * that names its own `startAt` ('HH:MM', from an '@HH:MM' input token) is
+ * PINNED there instead. Stacking every implicit entry at 09:00 asserts
+ * simultaneous work sessions; 09:00 also keeps every entry far from both
+ * exclusive filter bounds and from midnight.
  *
- * At >= 15h cumulative the cursor reaches 24:00:00, which startedString would
- * happily format as `2026-09-08T24:00:00.000+0300` — a string that PARSES as
- * 00:00 the NEXT Jira day, lands the worklog on the wrong date, and slips past
- * assertNotFuture because it is still in the past. Refuse it here with a domain
- * error rather than emitting a plausible-looking wrong day.
+ * Rule (simplest defensible one, chosen deliberately): a pinned entry neither
+ * consumes nor is shifted by the implicit cursor. The implicit entries
+ * sequence from 09:00 purely by their OWN cumulative duration, exactly as if
+ * the pinned entries were not in the list at all. Two independent facts drove
+ * this over "pinned entries also advance the cursor":
+ *  - a caller pins a time because they know it is correct; letting an
+ *    unrelated implicit entry silently shift because someone else's line
+ *    carried an '@' would be a surprising action-at-a-distance no caller asked
+ *    for;
+ *  - the motivating case (a fixed 11:00 standup INSIDE an 09:00-17:00 implicit
+ *    dev-work block) requires the two ranges to overlap on the calendar, so
+ *    "no overlap allowed" cannot be the rule either. Overlap between a pinned
+ *    entry and an implicit one is therefore deliberately never checked here -
+ *    pinning is the operator asserting the time is correct.
+ *
+ * At >= 15h cumulative among the IMPLICIT entries the cursor reaches 24:00:00,
+ * which startedString would happily format as `2026-09-08T24:00:00.000+0300` —
+ * a string that PARSES as 00:00 the NEXT Jira day, lands the worklog on the
+ * wrong date, and slips past assertNotFuture because it is still in the past.
+ * Refuse it here with a domain error rather than emitting a plausible-looking
+ * wrong day. A pinned entry can never trigger this refusal - its clock time is
+ * taken verbatim, never added to the cursor.
  */
 export function sequenceStarts(zone, isoDate, entries) {
   let cursor = 0
   return entries.map((e) => {
+    if (e.startAt) {
+      const started = startedString(zone, isoDate, `${e.startAt}:00`)
+      return { ...e, started }
+    }
     const startSeconds = DAY_START_SECONDS + cursor
     if (startSeconds >= 86400) {
       throw new Error(
@@ -187,6 +210,14 @@ export function hashPlan(plan) {
         seconds: e.seconds, started: e.started ?? null,
         comment: e.comment ?? null, fingerprint: e.fingerprint ?? null,
         hoursSource: e.hoursSource ?? null,
+        // whether the human pinned this entry's clock time via '@HH:MM' or left
+        // it to the sequencer. `started` already differs whenever the resulting
+        // clock time differs, but a hand-edited plan.json could flip this flag
+        // while leaving `started` numerically unchanged (e.g. a pinned 09:00
+        // entry re-marked as sequenced); that changes what the human actually
+        // approved at the gate (lib/preview.mjs's PINNED label), so it belongs
+        // in what loadPlanFile's hash re-check protects.
+        startAt: e.startAt ?? null,
         // task-14 Fix B: whether the comment was written by the human
         // (USER_SUPPLIED, grounding skipped) or composed by the tool from
         // evidence (EVIDENCED, grounding enforced) changes what the approval

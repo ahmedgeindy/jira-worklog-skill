@@ -69,7 +69,19 @@ function extractKey(token) {
 // silent "no comment" instead of a clear refusal.
 const COMMENT_SEP = ' :: '
 
-/** 'https://.../browse/HCFM-323 2h' -> {host, key, seconds, hoursSource, comment} */
+// Optional explicit start time: an '@HH:MM' token sitting after the hours and
+// before any ' :: ' comment ('HCFM-345 1h @11:00 :: daily standup'). Matched
+// against the WHOLE remainder (not split into whitespace tokens first) so a
+// glued form with no separating space - '1h@11:00' - still gets caught here
+// rather than reaching parseHours, whose `(h|m)` word-boundary match would
+// silently consume the '1h' and leave '@11:00' as ignored trailing text.
+const START_AT_RE = /@(\S+)/g
+// Same hour bound as lib/tz.mjs#startedString and for the same reason: 'T24:00'
+// parses as the NEXT Jira day, so an explicit '@24:00' must be refused here
+// rather than accepted and silently mis-filed a day late downstream.
+const START_AT_SHAPE_RE = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+/** 'https://.../browse/HCFM-323 2h' -> {host, key, seconds, hoursSource, startAt, comment} */
 export function parseLine(line) {
   const raw = String(line ?? '')
   if (!raw.trim()) throw new Error('cannot parse an empty line')
@@ -88,7 +100,30 @@ export function parseLine(line) {
   const { host, key } = extractKey(token)
   if (!key) throw new Error(`no issue key found in ${JSON.stringify(token)}`)
 
-  const hoursText = rest.join(' ').trim()
-  if (!hoursText) return { host, key, seconds: null, hoursSource: 'derived', comment }
-  return { host, key, seconds: parseHours(hoursText), hoursSource: 'stated', comment }
+  let hoursAndStart = rest.join(' ')
+  let startAt = null
+  const atMatches = [...hoursAndStart.matchAll(START_AT_RE)]
+  if (atMatches.length > 1) {
+    throw new Error(`only one @HH:MM start time is allowed per line: ${JSON.stringify(head)}`)
+  }
+  if (atMatches.length === 1) {
+    const [full, body] = atMatches[0]
+    const shape = START_AT_SHAPE_RE.exec(body)
+    if (!shape) {
+      throw new Error(`invalid @HH:MM start time (expected 00:00-23:59, e.g. @11:00): ${JSON.stringify(full)}`)
+    }
+    startAt = `${shape[1]}:${shape[2]}`
+    hoursAndStart = hoursAndStart.slice(0, atMatches[0].index) + hoursAndStart.slice(atMatches[0].index + full.length)
+  }
+
+  const hoursText = hoursAndStart.trim()
+  // Defensive: catches a stray '@' the regex above could not turn into a full
+  // match (e.g. a trailing '@' with nothing after it) rather than letting
+  // parseHours silently ignore it as unrecognised trailing text.
+  if (hoursText.includes('@')) {
+    throw new Error(`invalid @HH:MM start time (expected 00:00-23:59, e.g. @11:00): ${JSON.stringify(hoursText)}`)
+  }
+
+  if (!hoursText) return { host, key, seconds: null, hoursSource: 'derived', startAt, comment }
+  return { host, key, seconds: parseHours(hoursText), hoursSource: 'stated', startAt, comment }
 }

@@ -120,7 +120,14 @@ if (cmd === 'plan') {
   process.exit(r.ok ? 0 : 1)
 } else if (cmd === 'check-write') {
   const plan = loadPlan()
-  const r = checkWrite({ plan, date: arg('date'), key: arg('key'), deps: { checkWindow, readEstimate, tokens: tokenStoreForPlan() } })
+  // --fingerprint is optional and only needed to disambiguate when the plan
+  // carries more than one entry for --key on --date (two distinct @HH:MM
+  // start times on the same issue and day); checkWrite reports exactly that
+  // if it is required and missing.
+  const r = checkWrite({
+    plan, date: arg('date'), key: arg('key'), fingerprint: arg('fingerprint'),
+    deps: { checkWindow, readEstimate, tokens: tokenStoreForPlan() },
+  })
   process.stdout.write(r.ok ? `OK worklog ${r.worklogId}\n` : `FAIL: ${r.reason}\n`)
   process.exit(r.ok ? 0 : 1)
 } else if (cmd === 'verify') {
@@ -136,7 +143,9 @@ if (cmd === 'plan') {
     'usage: timelog.mjs plan --date YYYY-MM-DD --out plan.json\n' +
     '       timelog.mjs emit --plan plan.json --date YYYY-MM-DD --expect-hash <planHash>\n' +
     '       timelog.mjs check-cmd --plan plan.json --date YYYY-MM-DD --expect-hash <planHash> --cmd "<literal line>"\n' +
-    '       timelog.mjs check-write --plan plan.json --date YYYY-MM-DD --expect-hash <planHash> --key <KEY>\n' +
+    '       timelog.mjs check-write --plan plan.json --date YYYY-MM-DD --expect-hash <planHash> --key <KEY> [--fingerprint <fp>]\n' +
+    '       (--fingerprint is only required when --key has more than one entry that day, i.e. two\n' +
+    '       distinct @HH:MM start times on the same issue)\n' +
     '       timelog.mjs verify --plan plan.json\n' +
     '\n' +
     '--expect-hash is the planHash printed at the approval gate. It is REQUIRED on\n' +
