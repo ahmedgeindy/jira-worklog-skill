@@ -10,6 +10,16 @@ const CMD_INDENT = '      '
 
 const hours = (s) => `${(s / 3600).toFixed(1)}h`
 
+// The entry's clock time, straight out of `started` ('...T11:00:00.000+0300').
+// Rendered here because previously the start time was visible ONLY inside the
+// rendered command at the bottom of the block — a human approving the gate at
+// a glance could easily miss that two lines for the same issue landed at
+// different times (or, worse, the same time).
+function startClock(started) {
+  const m = /T(\d{2}:\d{2}):\d{2}\./.exec(String(started ?? ''))
+  return m ? m[1] : '??:??'
+}
+
 /**
  * Render the approval gate for one day.
  *
@@ -43,7 +53,12 @@ export function render(plan, day, bin) {
     // way DERIVED hours already are - the human must be able to see which
     // comments they authored and which the tool composed from evidence.
     const commentLabel = e.commentSource === 'USER_SUPPLIED' ? '  (comment USER_SUPPLIED, not evidence-derived)' : ''
-    lines.push(`  ${e.key}  ${hours(e.seconds)}  [${e.dedupeState}]${e.hoursSource === 'derived' ? '  (hours DERIVED by the model, not stated by you)' : ''}${commentLabel}`)
+    // A pinned '@HH:MM' is labelled the same way DERIVED hours and
+    // USER_SUPPLIED comments already are, so the human can see at a glance
+    // which entries they placed on the clock themselves versus which the
+    // sequencer placed for them.
+    const startLabel = e.startAt ? '  (start PINNED by you)' : ''
+    lines.push(`  ${e.key}  ${hours(e.seconds)}  @${startClock(e.started)}${startLabel}  [${e.dedupeState}]${e.hoursSource === 'derived' ? '  (hours DERIVED by the model, not stated by you)' : ''}${commentLabel}`)
     if (e.dedupeState === 'EXISTING') {
       lines.push(`      you already have ${hours(e.existingSecondsOnIssue ?? 0)} on this issue for this day`)
     }

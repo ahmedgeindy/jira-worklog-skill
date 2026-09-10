@@ -26,24 +26,67 @@ export function runPlan({ lines, isoDate, deps = {} }) {
   const days = dates.map((date) => {
     const parsed = lines.map((l) => parseLine(l))
 
-    // Two lines for the same issue on the same day derive the SAME fingerprint
-    // when the hours match, so emit would print the identical write twice and
-    // check-write would then find two rows carrying one marker. With different
-    // hours they collide differently: the first write flips the second entry's
-    // live dedupe state, so check-cmd aborts the day halfway through. Refuse
-    // here, where nothing has been written yet.
-    const seenKeys = new Set()
+    // Two lines for the same issue on the same day are refused UNLESS each is
+    // unambiguously a separate, deliberate activity — an explicit, DIFFERENT
+    // @HH:MM start time on each (parseLine's `startAt`). Four cases:
+    //
+    //  1. neither line carries an explicit @HH:MM  -> REFUSE. Indistinguishable
+    //     from an accidentally repeated input line: the SAME fingerprint would
+    //     result when the hours also match (emit prints the write twice), and
+    //     even when they don't, the first write flips the second entry's live
+    //     dedupe state so check-cmd aborts the day half-committed. This is
+    //     today's original guard, message unchanged.
+    //  2. both carry an explicit @HH:MM and the times DIFFER -> ALLOW. Two
+    //     deliberate, distinct activities on the same issue and day — the
+    //     entire point of this feature (a same-issue standup at 11:00 and a
+    //     separate block of work at 13:00).
+    //  3. both carry the SAME explicit @HH:MM -> REFUSE. A genuine collision:
+    //     two worklogs at the identical instant are indistinguishable
+    //     afterwards, and unlike case 1, re-running plan later does not
+    //     resolve it — the times themselves are equal, not merely unstated.
+    //  4. exactly one line carries an explicit @HH:MM -> REFUSE. The implicit
+    //     line is placed by the sequencer (lib/plan.mjs#sequenceStarts) at
+    //     09:00 plus its own cumulative duration, which could silently
+    //     coincide with the pinned line's time — exactly the ambiguity this
+    //     guard exists to prevent.
+    const seenByKey = new Map()
     for (const p of parsed) {
-      if (seenKeys.has(p.key)) {
-        throw new Error(
-          `refusing ${p.key} twice on ${date}: one issue may appear at most once per day in a plan. ` +
-          'Combine the lines into a single total, or add the second block by re-running plan ' +
-          'after the first one has landed (decision D1c).',
-        )
+      const prior = seenByKey.get(p.key)
+      if (prior) {
+        for (const q of prior) {
+          if (p.startAt == null && q.startAt == null) {
+            throw new Error(
+              `refusing ${p.key} twice on ${date}: one issue may appear at most once per day in a plan. ` +
+              'Combine the lines into a single total, or add the second block by re-running plan ' +
+              'after the first one has landed (decision D1c). To log two distinct activities on the ' +
+              'same issue and day instead, give each line its own @HH:MM start time.',
+            )
+          } else if (p.startAt != null && q.startAt != null) {
+            if (p.startAt === q.startAt) {
+              throw new Error(
+                `refusing ${p.key} twice on ${date} at the identical start time @${p.startAt}: two worklogs ` +
+                'at the same instant are indistinguishable afterwards. Give one of them a different @HH:MM, ' +
+                'or combine them into a single line if they really are the same session.',
+              )
+            }
+            // Different explicit times: two deliberate, distinct activities — allowed.
+            // (checked against every prior entry for this key, not just the first)
+          } else {
+            const pinned = p.startAt ?? q.startAt
+            throw new Error(
+              `refusing ${p.key} twice on ${date}: one line pins @${pinned} and the other has no explicit ` +
+              'start time. The implicit line is placed by the sequencer and could silently land on that ' +
+              'same pinned time. Give the implicit line its own @HH:MM too, or combine the lines into a ' +
+              'single total.',
+            )
+          }
+        }
+        prior.push(p)
+      } else {
+        seenByKey.set(p.key, [p])
       }
-      seenKeys.add(p.key)
     }
-    const keys = parsed.map((p) => p.key)
+    const keys = [...new Set(parsed.map((p) => p.key))]
 
     const evidence = deps.bundle({ isoDate: date, keys, zone: identity.zone, accountId: identity.accountId })
 
@@ -61,6 +104,9 @@ export function runPlan({ lines, isoDate, deps = {} }) {
       return {
         key: p.key, numericId: resolved.numericId, site: resolved.site,
         seconds: p.seconds, hoursSource: p.hoursSource,
+        // The explicit '@HH:MM' from the input line, if any (else null).
+        // Consumed by sequenceStarts below to pin this entry's clock time.
+        startAt: p.startAt ?? null,
         // Ruling 1 (task-11 vs task-12 step 4): every entry always carries a numeric
         // estimateBefore, frozen at plan time. cmd/guard.mjs's checkWrite compares the
         // post-write remaining estimate against this. If it were left undefined, the
@@ -86,9 +132,30 @@ export function runPlan({ lines, isoDate, deps = {} }) {
     const totalSeconds = dt.seconds + plannedSeconds
     const status = totalSeconds < FLOOR_SECONDS ? 'SHORT' : 'MEETS'
 
+    // Case 2 above (both explicit, different times) is allowed by the guard
+    // above, but lib/dedup.mjs#fingerprint deliberately excludes `started` —
+    // it hashes only accountId|key|isoDate|seconds. Two ALLOWED entries whose
+    // DURATIONS also happen to match therefore produce the identical
+    // fingerprint marker, so emit would print the same [twl:<fp>] on both
+    // lines and check-write would classify the second write as DUPLICATE
+    // against the first once it lands (see lib/dedup.mjs#classify — never
+    // changed by this feature, per spec). That is a real write-time failure,
+    // not a cosmetic one, so it is refused here at plan time rather than only
+    // noted in a preview.
+    const seenFingerprints = new Map()
     entries = entries.map((e) => {
       assertNotFuture(e.started, nowMs)
       const fp = fingerprint({ accountId: identity.accountId, key: e.key, isoDate: date, seconds: e.seconds })
+      if (seenFingerprints.has(fp)) {
+        throw new Error(
+          `refusing ${e.key} twice on ${date}: entries at @${seenFingerprints.get(fp)} and ` +
+          `@${e.startAt ?? '(sequenced)'} both plan ${e.seconds}s, so they share the SAME dedup fingerprint ` +
+          '(accountId+issue+day+seconds — start time is not part of it). The second write would be ' +
+          'misclassified as DUPLICATE against the first once it lands. Vary one duration by at least a ' +
+          'minute, or combine the two lines into one.',
+        )
+      }
+      seenFingerprints.set(fp, e.startAt ?? '(sequenced)')
       const rows = deps.checkWindow({ key: e.key, accountId: identity.accountId, zone: identity.zone, isoDate: date })
       const mine = rows.filter((r) => r?.author?.accountId === identity.accountId)
       // Validate the BODY, before the [twl:<fp>] marker is appended. The fingerprint is

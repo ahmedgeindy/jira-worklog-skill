@@ -34,6 +34,61 @@ test('the last start time that still fits inside the day is allowed', () => {
   assert.equal(out[1].started, '2026-09-08T23:00:00.000+0300')
 })
 
+// --- Feature 1: an entry naming its own `startAt` ('HH:MM', from an '@HH:MM'
+// input token) is PINNED there instead of sequenced. ---
+
+test('an entry with an explicit startAt is pinned there, converted to HH:MM:00', () => {
+  const out = sequenceStarts('Asia/Riyadh', '2026-09-08', [
+    { key: 'A-1', seconds: 3600, startAt: '11:00' },
+  ])
+  assert.equal(out[0].started, '2026-09-08T11:00:00.000+0300')
+})
+
+test('a pinned entry does not consume the implicit cursor: the next implicit entry still starts at 09:00', () => {
+  const out = sequenceStarts('Asia/Riyadh', '2026-09-08', [
+    { key: 'A-1', seconds: 3600, startAt: '11:00' },
+    { key: 'A-2', seconds: 7200 }, // implicit, no startAt
+  ])
+  assert.equal(out[0].started, '2026-09-08T11:00:00.000+0300')
+  assert.equal(out[1].started, '2026-09-08T09:00:00.000+0300')
+})
+
+test('a pinned entry is not itself shifted by other implicit entries around it', () => {
+  const out = sequenceStarts('Asia/Riyadh', '2026-09-08', [
+    { key: 'A-1', seconds: 7200 },              // implicit: 09:00
+    { key: 'A-2', seconds: 3600, startAt: '11:00' }, // pinned: 11:00 regardless of A-1
+    { key: 'A-3', seconds: 7200 },              // implicit: continues the IMPLICIT cursor at 11:00 (09:00 + A-1's 2h), ignoring the pin
+  ])
+  assert.equal(out[0].started, '2026-09-08T09:00:00.000+0300')
+  assert.equal(out[1].started, '2026-09-08T11:00:00.000+0300')
+  assert.equal(out[2].started, '2026-09-08T11:00:00.000+0300')
+})
+
+test('the exact motivating case: a standup pinned inside an implicit dev-work block', () => {
+  // 'PROJ-345 1h @11:00 :: daily standup' / 'PROJ-345 2.5h @13:00 :: ...' /
+  // 'PROJ-324 8h :: development work'. The implicit 8h block (09:00-17:00)
+  // necessarily OVERLAPS both pinned entries on the calendar - sequenceStarts
+  // must allow that overlap rather than trying to route around it.
+  const out = sequenceStarts('Asia/Riyadh', '2026-09-08', [
+    { key: 'PROJ-345', seconds: 3600, startAt: '11:00' },
+    { key: 'PROJ-345', seconds: 9000, startAt: '13:00' },
+    { key: 'PROJ-324', seconds: 28800 },
+  ])
+  assert.equal(out[0].started, '2026-09-08T11:00:00.000+0300')
+  assert.equal(out[1].started, '2026-09-08T13:00:00.000+0300')
+  assert.equal(out[2].started, '2026-09-08T09:00:00.000+0300')
+})
+
+test('a run of only pinned entries never triggers the past-midnight refusal, no matter their durations', () => {
+  // The midnight guard only tracks the IMPLICIT cursor; a pinned entry's clock
+  // time is taken verbatim and never added to it.
+  assert.doesNotThrow(() => sequenceStarts('Asia/Riyadh', '2026-09-08', [
+    { key: 'A-1', seconds: 8 * 3600, startAt: '09:00' },
+    { key: 'A-2', seconds: 8 * 3600, startAt: '12:00' },
+    { key: 'A-3', seconds: 8 * 3600, startAt: '20:00' },
+  ]))
+})
+
 test('buildAddArgv carries all five mandatory flags', () => {
   const argv = buildAddArgv({
     key: 'PROJ-323', seconds: 10800,
@@ -217,5 +272,26 @@ test('sanitization does not weaken the fabrication guard - the existing rejectio
 test('hashPlan changes when only commentSource changes - approval binds to who wrote the text', () => {
   const a = { days: [{ date: '2026-09-08', entries: [{ key: 'A-1', seconds: 3600, comment: 'x', commentSource: 'EVIDENCED' }] }] }
   const b = { days: [{ date: '2026-09-08', entries: [{ key: 'A-1', seconds: 3600, comment: 'x', commentSource: 'USER_SUPPLIED' }] }] }
+  assert.notEqual(hashPlan(a), hashPlan(b))
+})
+
+// --- Feature 1: two entries differing only in start time must hash
+// differently ("must not regress" requirement — confirms hashPlan already
+// covers `started`, which sequenceStarts sets from `startAt`). ---
+
+test('hashPlan changes when only the started time differs', () => {
+  const a = { days: [{ date: '2026-09-08', entries: [{ key: 'A-1', seconds: 3600, started: '2026-09-08T09:00:00.000+0300' }] }] }
+  const b = { days: [{ date: '2026-09-08', entries: [{ key: 'A-1', seconds: 3600, started: '2026-09-08T11:00:00.000+0300' }] }] }
+  assert.notEqual(hashPlan(a), hashPlan(b))
+})
+
+test('hashPlan changes when only startAt changes, even if started is (hypothetically) unchanged', () => {
+  // Defense in depth on top of the `started` coverage above: a hand-edited
+  // plan.json could flip whether an entry was PINNED vs sequenced (changing
+  // what lib/preview.mjs labelled and what the human approved) without
+  // necessarily changing the resulting clock time. loadPlanFile's hash
+  // re-check must still catch that.
+  const a = { days: [{ date: '2026-09-08', entries: [{ key: 'A-1', seconds: 3600, started: '2026-09-08T09:00:00.000+0300', startAt: null }] }] }
+  const b = { days: [{ date: '2026-09-08', entries: [{ key: 'A-1', seconds: 3600, started: '2026-09-08T09:00:00.000+0300', startAt: '09:00' }] }] }
   assert.notEqual(hashPlan(a), hashPlan(b))
 })

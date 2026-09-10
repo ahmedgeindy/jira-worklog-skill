@@ -116,12 +116,38 @@ export function checkCmd({ plan, date, cmd, deps }) {
  * doing anything else — one check-cmd authorizes exactly one check-write, so a
  * retry always forces a fresh drift check.
  */
-export function checkWrite({ plan, date, key, deps }) {
+export function checkWrite({ plan, date, key, fingerprint, deps }) {
   const tokens = requireTokens(deps)
   const day = plan.days.find((d) => d.date === date)
   if (!day) return { ok: false, reason: `plan contains no day ${date}` }
-  const planned = day.entries.find((e) => e.key === key)
-  if (!planned) return { ok: false, reason: `plan has no entry for ${key} on ${date}` }
+  const matches = day.entries.filter((e) => e.key === key)
+  if (matches.length === 0) return { ok: false, reason: `plan has no entry for ${key} on ${date}` }
+
+  // The duplicate-key guard in cmd/plan.mjs now allows more than one entry per
+  // (key, day) when each carries its own distinct '@HH:MM' start time, so
+  // `key` alone no longer names exactly one entry — picking matches[0] here
+  // would silently check the WRONG entry's fingerprint/estimate whenever the
+  // agent is confirming the second write. Fall back to the fingerprint the
+  // matching check-cmd call already approved (and the token store is already
+  // keyed on) to disambiguate, rather than guessing.
+  let planned
+  if (matches.length === 1) {
+    planned = matches[0]
+  } else if (fingerprint) {
+    planned = matches.find((e) => e.fingerprint === fingerprint)
+    if (!planned) {
+      return {
+        ok: false,
+        reason: `plan has ${matches.length} entries for ${key} on ${date}, none with fingerprint ${fingerprint}`,
+      }
+    }
+  } else {
+    return {
+      ok: false,
+      reason: `plan has ${matches.length} entries for ${key} on ${date} (distinct start times) — pass ` +
+        `--fingerprint to disambiguate: ${matches.map((m) => `${m.fingerprint} @${m.started}`).join(', ')}`,
+    }
+  }
 
   const authorized = tokens.take(planned.fingerprint)
   if (!authorized) {

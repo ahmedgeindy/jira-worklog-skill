@@ -86,3 +86,70 @@ test('an empty comment after :: is refused rather than silently treated as none'
   assert.throws(() => parseLine('PROJ-323 3h :: '), /comment/i)
   assert.throws(() => parseLine('PROJ-323 3h ::   '), /comment/i)
 })
+
+// --- Feature 1: an optional explicit '@HH:MM' start time, sitting after the
+// hours and before any ' :: ' comment. ---
+
+test('an @HH:MM start time is parsed into startAt, and does not leak into hours', () => {
+  const r = parseLine('PROJ-345 1h @11:00 :: daily standup')
+  assert.equal(r.key, 'PROJ-345')
+  assert.equal(r.seconds, 3600)
+  assert.equal(r.startAt, '11:00')
+  assert.equal(r.comment, 'daily standup')
+})
+
+test('@HH:MM works with decimal hours and no comment', () => {
+  const r = parseLine('PROJ-345 2.5h @13:00')
+  assert.equal(r.seconds, 9000)
+  assert.equal(r.startAt, '13:00')
+  assert.equal(r.comment, null)
+})
+
+test('a line with no @ carries startAt: null, not undefined', () => {
+  const r = parseLine('PROJ-324 8h :: development work')
+  assert.equal(r.startAt, null)
+  assert.equal(r.seconds, 28800)
+})
+
+test('a line with no hours at all still yields startAt: null alongside seconds: null', () => {
+  const r = parseLine('PROJ-323')
+  assert.equal(r.startAt, null)
+  assert.equal(r.seconds, null)
+})
+
+test('@HH:MM glued directly onto the hours token with no separating space is still caught', () => {
+  // A per-token '@' scan would see '1h@11:00' as a single token starting with
+  // '1', never notice the '@', and let parseHours's word-boundary match
+  // silently consume just the '1h' - dropping the start time with no error at
+  // all. This must be refused-or-parsed the same as the spaced form, never
+  // silently ignored.
+  const r = parseLine('PROJ-345 1h@11:00 :: daily standup')
+  assert.equal(r.seconds, 3600)
+  assert.equal(r.startAt, '11:00')
+})
+
+test('the boundary values 00:00 and 23:59 are valid start times', () => {
+  assert.equal(parseLine('PROJ-323 1h @00:00').startAt, '00:00')
+  assert.equal(parseLine('PROJ-323 1h @23:59').startAt, '23:59')
+})
+
+test('24:00 is refused: it parses as midnight the NEXT Jira day downstream', () => {
+  // Same trap lib/tz.mjs#startedString guards against for the sequenced case;
+  // an explicit start time must be bound by the identical reasoning.
+  assert.throws(() => parseLine('PROJ-323 1h @24:00'), /invalid @HH:MM|00:00-23:59/i)
+})
+
+test('an out-of-range or malformed @ value is refused with a clear message, not silently mis-parsed', () => {
+  assert.throws(() => parseLine('PROJ-323 1h @25:00'), /invalid @HH:MM/i)
+  assert.throws(() => parseLine('PROJ-323 1h @9:00'), /invalid @HH:MM/i) // single-digit hour: not HH:MM
+  assert.throws(() => parseLine('PROJ-323 1h @11:5'), /invalid @HH:MM/i) // single-digit minute
+  assert.throws(() => parseLine('PROJ-323 1h @not-a-time'), /invalid @HH:MM/i)
+})
+
+test('more than one @HH:MM token on a line is refused rather than picking one', () => {
+  assert.throws(() => parseLine('PROJ-323 1h @11:00 @13:00'), /only one @HH:MM/i)
+})
+
+test('a bare trailing @ with nothing after it is refused, not silently dropped', () => {
+  assert.throws(() => parseLine('PROJ-323 3h @'), /invalid @HH:MM/i)
+})

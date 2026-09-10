@@ -110,6 +110,35 @@ test('an EVIDENCED comment does NOT render the USER_SUPPLIED label - negative co
   assert.equal(/USER_SUPPLIED/.test(render({ ...PLAN, days: [day] }, day, BIN)), false)
 })
 
+// --- Feature 1: the start time must be visible on the entry line itself, not
+// only inside the rendered command at the bottom of the block. ---
+
+test('the entry line surfaces the actual clock time, not just inside the rendered command', () => {
+  const day = { ...DAY, entries: [{ ...ENTRY, started: '2026-09-08T11:00:00.000+0300', startAt: '11:00' }] }
+  const out = render({ ...PLAN, days: [day] }, day, BIN)
+  const entryLine = out.split('\n').find((l) => l.includes(ENTRY.key) && !l.trim().startsWith('&'))
+  assert.match(entryLine, /@11:00/)
+})
+
+test('a pinned (@HH:MM) entry is labelled PINNED at the gate', () => {
+  const day = { ...DAY, entries: [{ ...ENTRY, started: '2026-09-08T11:00:00.000+0300', startAt: '11:00' }] }
+  const out = render({ ...PLAN, days: [day] }, day, BIN)
+  assert.match(out, /PINNED/)
+})
+
+test('an entry with no explicit start time is NOT labelled PINNED - negative control', () => {
+  const out = render(PLAN, DAY, BIN) // ENTRY carries no startAt
+  assert.equal(/PINNED/.test(out), false)
+})
+
+test('two entries for the same issue at different pinned times both show their own clock time', () => {
+  const other = { ...ENTRY, seconds: 9000, started: '2026-09-08T13:00:00.000+0300', startAt: '13:00', fingerprint: 'def456' }
+  const day = { ...DAY, entries: [{ ...ENTRY, started: '2026-09-08T11:00:00.000+0300', startAt: '11:00' }, other] }
+  const out = render({ ...PLAN, days: [day] }, day, BIN)
+  assert.match(out, /@11:00/)
+  assert.match(out, /@13:00/)
+})
+
 // --- task-14 Fix A #3: a crash while rendering the preview must never leave a
 // stale plan file behind for a later --expect-hash to be pointed at. The real
 // bug lived in timelog.mjs, which used to writeFileSync the plan BEFORE
