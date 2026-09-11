@@ -1,6 +1,6 @@
 ---
 name: jira-worklog
-description: Use when logging time to Jira from issue URLs or keys with hours, reviewing what is already logged for a day, or checking a day against the 7h policy floor. Drives scripts/timelog.mjs through plan, a human gate, guarded agent-issued writes, and verify — against Asia/Riyadh Jira days and a Sunday–Thursday work week. Handles backdating, duplicate detection against live server state, evidence-backed worklog comments, and estimate protection. Use for "log my time", "log 3h on HCFM-323", "what did I log yesterday", "check my day against policy", or a pasted list of Jira URLs with hours.
+description: Use when logging time to Jira from issue URLs or keys with hours, reviewing what is already logged for a day, or checking a day against the 7h policy floor. Drives scripts/timelog.mjs through plan, a human gate, guarded writes, and verify — against Asia/Riyadh Jira days and a Sunday–Thursday work week. Handles backdating, duplicate detection against live server state, evidence-backed worklog comments, and estimate protection. Use for "log my time", "log 3h on HCFM-323", "what did I log yesterday", "check my day against policy", or a pasted list of Jira URLs with hours.
 ---
 
 ## Overview

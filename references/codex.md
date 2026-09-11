@@ -21,6 +21,12 @@ it themselves and that you will wait.
 Then continue at step 5.3 (`check-write`) once they confirm it ran. `check-write` reads live server
 state, so it verifies the write actually landed — you are not taking their word for it.
 
+Emitted lines are known to paste cleanly: one was parsed with
+`[System.Management.Automation.Language.Parser]::ParseInput` under bare-console semantics (no
+`-Command` wrapper) and returned 0 errors, 2026-09-11. The lines are fully single-quoted, so the
+console parses them one layer shallower than the Claude Code PowerShell tool does, without change
+in meaning.
+
 ## Why the Claude Code reasoning does not transfer
 
 Do **not** carry over the sentence "`Bash(node *)` is allowlisted here with an empty ask/deny
@@ -65,6 +71,30 @@ Never relax it, and never add an `apply` subcommand.
 
 Everything else fires unchanged: `--expect-hash` binding, the `check-cmd` approval token,
 `GUARD BYPASSED` on a missing token, and the estimate-clobber comparison in `check-write`.
+
+The approval token has **no expiry** — `fileTokenStore.has`/`take` are pure existence checks and
+the `Date.now()` written into the file is never read back. A human taking ten minutes to paste is
+fine; a late paste cannot produce a false `GUARD BYPASSED`.
+
+## What this does NOT protect against — read this
+
+The paste step is consent-by-construction **for the intended path only.** Say what it proves and
+what it does not:
+
+`assertArgvSafe` governs what the **scripts** spawn. Nothing governs what the **model** types. A
+model that disregards "print the line and stop" can compose and run
+`twg … worklog add …` itself, and line 255 pre-approves it with no prompt. Under Claude Code that
+same disobedience still hits a permission prompt; **under Codex it does not.**
+
+So: under Codex there is **no harness-enforced gate on a write.** The guards above make a bypass
+*loud* after the fact (`check-write` reads live server state, `GUARD BYPASSED` on a missing token)
+— they cannot make it *impossible*. This is precisely why unresolved item 4 below matters more than
+the rest: a project-level `.rules` entry that denies or prompts on `worklog add` would be the only
+thing here that does not depend on model compliance. Until that is established, the honest
+statement is that Codex operation rests on the model following this file.
+
+A corollary: **do not run this skill under Codex unattended.** The human who pastes is also the
+only one who can notice a write that happened without them.
 
 ## Troubleshooting: twg says "Unable to connect"
 
