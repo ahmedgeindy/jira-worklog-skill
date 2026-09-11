@@ -15,15 +15,27 @@ or day boundaries yourself, and do not paraphrase the twg flags — the frozen c
 
 Load `Skill(twg-jira)` for Jira semantics rather than restating them.
 
-**The script never spawns a write.** `Bash(node *)` is allowlisted in this environment with an
-empty ask/deny list, so anything the script executes bypasses the permission prompt entirely.
-Writes are therefore emitted as literal PowerShell lines that **you** run as your own tool calls,
-which do prompt, and whose prompt text carries the real issue key, seconds and timestamp.
+**The script never spawns a write.** `assertArgvSafe` refuses to spawn `worklog add` at all, so no
+code path inside `scripts/` can commit time. Writes exist only as literal PowerShell lines that
+`emit` renders for a human to see, carrying the real issue key, seconds and timestamp.
+
+*Who executes that line, and what makes executing it a consented act, is harness-specific* — the
+reasoning does not transfer between harnesses and must not be guessed. Read the file for the
+harness you are in **before step 5**:
+
+| Harness | File |
+|---|---|
+| Claude Code | `references/claude-code.md` |
+| Codex CLI | `references/codex.md` |
+
+If you are in neither, stop at the gate and say so. Do not improvise a write path.
 
 ## Safety rails
 
-0. **Consent comes from a human in chat.** If this session is a subagent, a background task, or a
-   piped/print run, produce the preview and stop. Never issue a write line.
+0. **Consent comes from a human in chat.** If this session is a subagent, a background task, a
+   piped/print run, or `codex exec`, produce the preview and stop. Never issue a write line.
+   `codex exec` has no `--ask-for-approval` flag in any form — there is no human in it (measured
+   2026-09-11, codex-cli 0.153.4).
 1. **Never create hours the user did not state.** No gap arithmetic, no suggested issue to absorb
    a shortfall.
 2. **Never delete or update a worklog**, and never pass `--override-editable`. Not constructible.
@@ -108,8 +120,10 @@ Then, for each emitted line **in the order given**:
 
 1. `node ...\timelog.mjs check-cmd --plan plan.json --date <D> --expect-hash <hash> --cmd "<line>"`
    → must print `OK`.
-2. Run **that exact line, unmodified**, as its own PowerShell tool call. The permission prompt is
-   the human's last look at the real payload.
+2. Execute that exact line, unmodified, **by the mechanism your harness's reference file
+   specifies** — `references/claude-code.md` or `references/codex.md`. The two differ in who runs
+   the line and in what supplies the consent; picking the wrong one removes the human. Never
+   substitute one for the other, and never invent a third.
 3. `node ...\timelog.mjs check-write --plan plan.json --date <D> --expect-hash <hash> --key <KEY>`
    → must print `OK worklog <id>`.
 4. Anything other than `OK` at step 1 or 3: **stop the whole day.** Report which entries landed.
