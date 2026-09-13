@@ -6,7 +6,7 @@ import { resolveIdentity, assertAccountId } from '../lib/identity.mjs'
 const MYSELF = {
   accountId: '712020:00000000-1111-2222-3333-444444444444',
   emailAddress: 'dev@example.com',
-  displayName: 'Test User',
+  displayName: 'Example Dev',
   timeZone: 'Asia/Riyadh',
 }
 
