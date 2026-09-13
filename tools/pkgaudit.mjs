@@ -61,7 +61,12 @@ export const RULES = [
   // ---- org-identifying: only a problem when publishing publicly ----
   { id: 'internal-host', severity: 'org', re: /[A-Za-z0-9-]*istnetworks[A-Za-z0-9-]*/g,
     why: 'internal Atlassian site name' },
-  { id: 'internal-issue-key', severity: 'org', re: /\bHCFM-\d+\b/g,
+  // NO \b anchors. They were here, and they made this rule report CLEAN while four
+  // real keys were still in the package: in '\tPROJ-223' and 'key%3DPROJ-999' the
+  // preceding character is a word character, so there is no boundary to match. The
+  // scrubber used the same anchor, so the scanner could not catch what the scrubber
+  // missed -- a shared assumption is not two checks, it is one.
+  { id: 'internal-issue-key', severity: 'org', re: /HCFM-\d+/gi,
     why: 'real internal Jira issue key' },
   { id: 'customer-name', severity: 'org', re: /\bSERA\b|\bSTC-?BH\b|\bZain(?:-?BH)?\b|\bJawwy\b/gi,
     why: 'customer name' },

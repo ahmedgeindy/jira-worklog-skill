@@ -43,12 +43,16 @@ to catch it before the real report is believed.
 scope must be settled before the first publish, because a published name is
 effectively permanent (the unpublish window is 72 hours, and the name stays taken).
 
-`@ahmedgeindy/jira-worklog` is the recommendation. `@istnetworks/...` is deliberately
-**not** used: on npm, whoever creates an organisation owns it, so creating a
-company-named scope from a personal account puts the company's namespace under one
-employee's login. That is a company decision and a company account, not a technical
-step to be taken in passing. Moving later is cheap — publish the same tarball under
-the company scope and `npm deprecate` the personal one with a pointer.
+`@ahmedgeindy/jira-worklog` is the recommendation. A company-named scope
+(`@istnetworks/...`) is deliberately **not** used: on npm, whoever creates an
+organisation owns it, so creating a company-named scope from a personal account puts
+the company's namespace under one employee's login. That is a company decision made
+with a company account, not a technical step to be taken in passing. Moving later is
+cheap — publish the same tarball under the company scope and `npm deprecate` the
+personal one with a pointer.
+
+(This file is not in the package `files` whitelist, so the company name here never
+ships. `npm run audit` scans the tarball, not the repo, which is why it stays clean.)
 
 ## The first release is manual. It cannot be automated.
 
