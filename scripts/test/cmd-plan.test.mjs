@@ -402,17 +402,27 @@ test('two DIFFERENT issues, each with the same @HH:MM as each other, is fine (th
   assert.equal(p.days[0].entries.length, 2)
 })
 
-// --- Must-not-regress: equal-duration entries that pass the case-2 ALLOW
-// share a dedup fingerprint (lib/dedup.mjs#fingerprint excludes `started`),
-// so they are refused at PLAN time rather than left to fail at write time. ---
+// --- fingerprint v2 includes `started`, so equal-duration entries at
+// DIFFERENT times no longer collide. Under v1 they shared one fingerprint,
+// hence one approval token, and the second check-write reported GUARD BYPASSED
+// against a perfectly legitimate write. ---
 
-test('two case-2-allowed entries with the SAME duration are refused: identical dedup fingerprint', () => {
+test('two case-2-allowed entries with the SAME duration but different @HH:MM are ACCEPTED and get distinct fingerprints', () => {
+  const p = runPlan({
+    lines: ['PROJ-323 1h @11:00 :: standup', 'PROJ-323 1h @13:00 :: something else'],
+    isoDate: '2026-09-08', deps: deps(),
+  })
+  assert.equal(p.days[0].entries.length, 2)
+  assert.notEqual(p.days[0].entries[0].fingerprint, p.days[0].entries[1].fingerprint)
+})
+
+test('the genuine duplicate - same duration AND same start time - is still refused at plan time', () => {
   assert.throws(
     () => runPlan({
-      lines: ['PROJ-323 1h @11:00 :: standup', 'PROJ-323 1h @13:00 :: something else'],
+      lines: ['PROJ-323 1h @11:00 :: standup', 'PROJ-323 1h @11:00 :: standup again'],
       isoDate: '2026-09-08', deps: deps(),
     }),
-    /same dedup fingerprint|SAME dedup fingerprint/i,
+    /one dedup fingerprint|refusing PROJ-323 twice/i,
   )
 })
 

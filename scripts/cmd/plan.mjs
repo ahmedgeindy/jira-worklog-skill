@@ -1,7 +1,7 @@
 // skills/jira-worklog/scripts/cmd/plan.mjs
 import { parseLine } from '../lib/urls.mjs'
 import { sequenceStarts, hashPlan, validateComment, sanitizeCommentText } from '../lib/plan.mjs'
-import { fingerprint, markerFor, classify } from '../lib/dedup.mjs'
+import { fingerprint, classify } from '../lib/dedup.mjs'
 import { isWorkday, weekdayOf, assertNotFuture, localVsJiraDateDiffers } from '../lib/tz.mjs'
 import { UNSAFE_CHARS } from '../lib/psline.mjs'
 
@@ -132,38 +132,33 @@ export function runPlan({ lines, isoDate, deps = {} }) {
     const totalSeconds = dt.seconds + plannedSeconds
     const status = totalSeconds < FLOOR_SECONDS ? 'SHORT' : 'MEETS'
 
-    // Case 2 above (both explicit, different times) is allowed by the guard
-    // above, but lib/dedup.mjs#fingerprint deliberately excludes `started` —
-    // it hashes only accountId|key|isoDate|seconds. Two ALLOWED entries whose
-    // DURATIONS also happen to match therefore produce the identical
-    // fingerprint marker, so emit would print the same [twl:<fp>] on both
-    // lines and check-write would classify the second write as DUPLICATE
-    // against the first once it lands (see lib/dedup.mjs#classify — never
-    // changed by this feature, per spec). That is a real write-time failure,
-    // not a cosmetic one, so it is refused here at plan time rather than only
-    // noted in a preview.
+    // Case 2 above (both explicit, different times) is allowed, and since the
+    // fingerprint is v2 (it now includes `started`) two such entries no longer
+    // collide. What this guard still catches is the genuine duplicate: two
+    // entries on the same issue and day with the SAME start time AND the same
+    // duration, which are indistinguishable to every downstream check — one
+    // approval token, one matching row for two writes. Refused at plan time
+    // rather than surfacing as a confusing GUARD BYPASSED at write time.
     const seenFingerprints = new Map()
     entries = entries.map((e) => {
       assertNotFuture(e.started, nowMs)
-      const fp = fingerprint({ accountId: identity.accountId, key: e.key, isoDate: date, seconds: e.seconds })
+      const fp = fingerprint({ accountId: identity.accountId, key: e.key, isoDate: date, seconds: e.seconds, started: e.started })
       if (seenFingerprints.has(fp)) {
         throw new Error(
           `refusing ${e.key} twice on ${date}: entries at @${seenFingerprints.get(fp)} and ` +
-          `@${e.startAt ?? '(sequenced)'} both plan ${e.seconds}s, so they share the SAME dedup fingerprint ` +
-          '(accountId+issue+day+seconds — start time is not part of it). The second write would be ' +
-          'misclassified as DUPLICATE against the first once it lands. Vary one duration by at least a ' +
-          'minute, or combine the two lines into one.',
+          `@${e.startAt ?? '(sequenced)'} plan the SAME ${e.seconds}s at the SAME start time, so they share ` +
+          'one dedup fingerprint (accountId+issue+day+seconds+started). They would share a single approval ' +
+          'token and match the same server row, so the second write could not be verified. Give one a ' +
+          'different @HH:MM, vary a duration, or combine the two lines into one.',
         )
       }
       seenFingerprints.set(fp, e.startAt ?? '(sequenced)')
       const rows = deps.checkWindow({ key: e.key, accountId: identity.accountId, zone: identity.zone, isoDate: date })
       const mine = rows.filter((r) => r?.author?.accountId === identity.accountId)
-      // Validate the BODY, before the [twl:<fp>] marker is appended. The fingerprint is
-      // a 16-char lowercase hex string, which is byte-for-byte what validateComment's
-      // TOKEN_RE treats as an unverified commit SHA — validating the marker-bearing text
-      // would make every comment fail as "names things absent from the evidence bundle".
-      // The marker is tool metadata, not a claim that needs grounding, so it is appended
-      // only after validation passes.
+      // The comment is exactly the validated body — no tool metadata is appended.
+      // A '[twl:<fingerprint>]' marker used to go here so check-write could find
+      // its own row; that moved to a started+seconds match (cmd/guard.mjs) so
+      // nothing tool-shaped reaches a human reading the worklog in Jira.
       //
       // task-14 Fix B: a ' :: ' comment on the input line is USER_SUPPLIED - a
       // human wrote it, so grounding is meaningless and skipped. Everything
@@ -190,14 +185,14 @@ export function runPlan({ lines, isoDate, deps = {} }) {
       if (UNSAFE_CHARS.test(body)) {
         throw new Error(`comment rejected for ${e.key}: still unsafe after sanitization`)
       }
-      const comment = `${body} ${markerFor(fp)}`
+      const comment = body
       const { userComment: _userComment, ...frozen } = e
       return {
         ...frozen,
         fingerprint: fp,
         comment,
         commentSource,
-        dedupeState: classify(rows, { accountId: identity.accountId, seconds: e.seconds, fp }),
+        dedupeState: classify(rows, { accountId: identity.accountId, seconds: e.seconds }),
         existingSecondsOnIssue: mine.reduce((a, r) => a + Number(r.timeSpentSeconds ?? 0), 0),
       }
     })

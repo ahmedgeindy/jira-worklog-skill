@@ -6,16 +6,22 @@ import { run as realRun, assertTrustworthy, assertEcho } from './twg.mjs'
 /**
  * Identity of a planned worklog. Comment text is EXCLUDED so a reworded comment
  * on a re-run still matches.
+ *
+ * v2 adds `started`. v1 hashed only accountId|key|isoDate|seconds, so two
+ * entries cmd/plan.mjs explicitly ALLOWS — same issue, same day, distinct
+ * '@HH:MM', identical duration — collided on one fingerprint. They shared a
+ * single approval token, so the second check-write reported GUARD BYPASSED
+ * against a write that was perfectly legitimate.
+ *
+ * Bumping the version invalidates plan files written by an earlier build:
+ * planHash covers the entries, so loadPlanFile refuses them rather than
+ * silently checking the wrong entry. Re-run `plan`.
  */
-export function fingerprint({ accountId, key, isoDate, seconds }) {
+export function fingerprint({ accountId, key, isoDate, seconds, started }) {
   return createHash('sha256')
-    .update(`v1|${accountId}|${key}|${isoDate}|${seconds}`)
+    .update(`v2|${accountId}|${key}|${isoDate}|${seconds}|${started ?? ''}`)
     .digest('hex')
     .slice(0, 16)
-}
-
-export function markerFor(fp) {
-  return `[twl:${fp}]`
 }
 
 /**
@@ -40,16 +46,24 @@ export function flattenAdf(comment) {
 /**
  * Three-tier ladder. Tier 3 deliberately EXCLUDES seconds: if I already have
  * any time on this issue for this day, the answer is EXISTING, never CLEAR.
+ *
+ * There used to be a tier above the duration check: a '[twl:<fingerprint>]'
+ * marker appended to every comment, matched here to recognise an exact re-run.
+ * It was removed because it put tool metadata in front of every human who reads
+ * a worklog in Jira. Re-run protection is unchanged in practice — a re-run
+ * plans the same duration on the same issue and day, so the duration check
+ * below still returns DUPLICATE and check-cmd still aborts before any write.
+ * What is lost is only the ability to tell "this exact entry" from "some other
+ * entry of the same length"; cmd/guard.mjs#checkWrite now does that with
+ * started+seconds instead.
  */
-export function classify(rows, { accountId, seconds, fp }) {
+export function classify(rows, { accountId, seconds }) {
   const list = rows ?? []
   if (list.some((r) => r && r.author?.accountId === undefined)) return 'AMBIGUOUS'
 
   const mine = list.filter((r) => r?.author?.accountId === accountId)
   if (mine.length === 0) return 'CLEAR'
 
-  const marker = markerFor(fp)
-  if (mine.some((r) => flattenAdf(r.comment).includes(marker))) return 'DUPLICATE'
   if (mine.some((r) => Number(r.timeSpentSeconds) === Number(seconds))) return 'DUPLICATE'
   return 'EXISTING'
 }

@@ -7,7 +7,6 @@ import { join } from 'node:path'
 import { psQuote, renderPsCommand, emitManifest } from '../cmd/emit.mjs'
 import { checkCmd, checkWrite, fileTokenStore } from '../cmd/guard.mjs'
 import { hashPlan } from '../lib/plan.mjs'
-import { markerFor } from '../lib/dedup.mjs'
 
 const ME = 'me-1'
 const BIN = 'C:/twg/twg.exe'
@@ -20,7 +19,7 @@ function makePlan(over = {}) {
       entries: [{
         key: 'PROJ-323', numericId: '999', site: 'x.atlassian.net',
         seconds: 25200, started: '2026-09-08T09:00:00.000+0300',
-        comment: `reviewed the migrator PR ${markerFor('abc123')}`,
+        comment: 'reviewed the migrator PR',
         fingerprint: 'abc123', dedupeState: 'CLEAR', hoursSource: 'stated',
         existingSecondsOnIssue: 0, evidence: [],
         // Ruling 1: a real plan always freezes a numeric estimateBefore on every
@@ -71,7 +70,7 @@ test('a rendered command contains no PowerShell chaining or redirection', () => 
 })
 
 test('a comment carrying a shell metacharacter is REFUSED at emit time', () => {
-  const p = makePlan({ comment: 'ran `whoami` $env:PATH [twl:abc123]' })
+  const p = makePlan({ comment: 'ran `whoami` $env:PATH' })
   assert.throws(() => emitManifest(p, '2026-09-08', BIN), /unsafe character/i)
 })
 
@@ -80,7 +79,7 @@ test('a comment carrying a shell metacharacter is REFUSED at emit time', () => {
 // an embedded `"` there breaks the outer quoting and can desync check-cmd's
 // byte-equality comparison from what actually runs. Refuse at emit time.
 test('a comment carrying a double quote is REFUSED at emit time', () => {
-  const p = makePlan({ comment: 'said "hi" [twl:abc123]' })
+  const p = makePlan({ comment: 'said "hi"' })
   assert.throws(() => emitManifest(p, '2026-09-08', BIN), /unsafe character/i)
 })
 
@@ -180,12 +179,12 @@ test('checkCmd: CLEAR passes', () => {
   assert.equal(tokens.has('abc123'), true)
 })
 
-test('check-write confirms exactly one row carrying this fingerprint marker (token present)', () => {
+test('check-write confirms exactly one row matching the planned started+seconds (token present)', () => {
   const p = makePlan()
   const deps = {
     checkWindow: () => [{
-      id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200,
-      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `x ${markerFor('abc123')}` }] }] },
+      id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200, started: '2026-09-08T09:00:00.000+0300',
+      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] },
     }],
     readEstimate: () => 0,
     tokens: makeTokenStore(['abc123']),
@@ -212,11 +211,11 @@ test('check-write fails with a clear reason (not a raw TypeError) when --date na
   assert.match(r.reason, /no day|contains no day/i)
 })
 
-test('check-write fails on TWO rows carrying the same marker (double-log, token present)', () => {
+test('check-write fails on TWO rows matching the planned started+seconds (double-log, token present)', () => {
   const p = makePlan()
   const row = {
-    id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200,
-    comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: markerFor('abc123') }] }] },
+    id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200, started: '2026-09-08T09:00:00.000+0300',
+    comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] },
   }
   const deps = { checkWindow: () => [row, { ...row, id: '5002' }], readEstimate: () => 0, tokens: makeTokenStore(['abc123']) }
   const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
@@ -228,8 +227,8 @@ test('check-write reports ESTIMATE_CLOBBERED when the estimate moved (token pres
   const p = makePlan({ existingSecondsOnIssue: 0, estimateBefore: 230400 })
   const deps = {
     checkWindow: () => [{
-      id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200,
-      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: markerFor('abc123') }] }] },
+      id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200, started: '2026-09-08T09:00:00.000+0300',
+      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] },
     }],
     readEstimate: () => 205200,
     tokens: makeTokenStore(['abc123']),
@@ -245,8 +244,8 @@ test('check-write reports GUARD BYPASSED when no approval token exists (agent sk
   const p = makePlan()
   const deps = {
     checkWindow: () => [{
-      id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200,
-      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `x ${markerFor('abc123')}` }] }] },
+      id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200, started: '2026-09-08T09:00:00.000+0300',
+      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] },
     }],
     readEstimate: () => 0,
     tokens: makeTokenStore(), // empty - check-cmd never ran for this fingerprint
@@ -268,8 +267,8 @@ test('the realistic flow: check-cmd running first leaves the token check-write n
     plan: p, date: '2026-09-08', key: 'PROJ-323',
     deps: {
       checkWindow: () => [{
-        id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200,
-        comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `x ${markerFor('abc123')}` }] }] },
+        id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200, started: '2026-09-08T09:00:00.000+0300',
+        comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] },
       }],
       readEstimate: () => 0,
       tokens,
@@ -283,8 +282,8 @@ test('the approval token is single-use: a second check-write without a fresh che
   const p = makePlan()
   const tokens = makeTokenStore(['abc123'])
   const rows = [{
-    id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200,
-    comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `x ${markerFor('abc123')}` }] }] },
+    id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200, started: '2026-09-08T09:00:00.000+0300',
+    comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] },
   }]
   const deps = { checkWindow: () => rows, readEstimate: () => 0, tokens }
 
@@ -313,7 +312,7 @@ function pushSecondEntry(p, over = {}) {
   p.days[0].entries.push({
     key: 'PROJ-323', numericId: '999', site: 'x.atlassian.net',
     seconds: 9000, started: '2026-09-08T13:00:00.000+0300', startAt: '13:00',
-    comment: `paired with Sam ${markerFor('def456')}`,
+    comment: 'paired with Sam',
     fingerprint: 'def456', dedupeState: 'CLEAR', hoursSource: 'stated',
     existingSecondsOnIssue: 0, evidence: [], estimateBefore: 0,
     ...over,
@@ -335,8 +334,8 @@ test('check-write disambiguates by --fingerprint when the plan has two entries f
   const p = pushSecondEntry(makePlan())
   const deps = {
     checkWindow: () => [{
-      id: '5002', author: { accountId: ME }, timeSpentSeconds: 9000,
-      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `x ${markerFor('def456')}` }] }] },
+      id: '5002', author: { accountId: ME }, timeSpentSeconds: 9000, started: '2026-09-08T13:00:00.000+0300',
+      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] },
     }],
     readEstimate: () => 0,
     tokens: makeTokenStore(['def456']),
@@ -344,6 +343,59 @@ test('check-write disambiguates by --fingerprint when the plan has two entries f
   const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', fingerprint: 'def456', deps })
   assert.equal(r.ok, true)
   assert.equal(r.worklogId, '5002')
+})
+
+// --- The marker used to be what told one entry's row from another's. These
+// pin the started+seconds match that replaced it. ---
+
+test('check-write picks the row for THIS entry when a same-length row exists at another start time', () => {
+  // Two 2.5h entries on one issue/day, 11:00 and 13:00. Both rows are on the
+  // server. Confirming the 13:00 entry must return ITS row (5002), never 5001 -
+  // a seconds-only match would pick whichever came first.
+  const p = pushSecondEntry(makePlan())
+  const deps = {
+    checkWindow: () => [
+      { id: '5001', author: { accountId: ME }, timeSpentSeconds: 9000, started: '2026-09-08T11:00:00.000+0300' },
+      { id: '5002', author: { accountId: ME }, timeSpentSeconds: 9000, started: '2026-09-08T13:00:00.000+0300' },
+    ],
+    readEstimate: () => 0,
+    tokens: makeTokenStore(['def456']),
+  }
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', fingerprint: 'def456', deps })
+  assert.equal(r.ok, true)
+  assert.equal(r.worklogId, '5002')
+})
+
+test('check-write does NOT accept a row of the right length at the WRONG start time as proof the write landed', () => {
+  // Same length, different time: the write did not land. Matching on seconds
+  // alone would report a false OK here and the entry would be silently skipped.
+  const p = makePlan()
+  const deps = {
+    checkWindow: () => [
+      { id: '5009', author: { accountId: ME }, timeSpentSeconds: 25200, started: '2026-09-08T15:00:00.000+0300' },
+    ],
+    readEstimate: () => 0,
+    tokens: makeTokenStore(['abc123']),
+  }
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /did not land/i)
+})
+
+test('check-write ignores another author\'s row at the same start time and duration', () => {
+  // PROJ-345 really does carry a second person's worklogs; an unfiltered read
+  // there measured roughly double the truth.
+  const p = makePlan()
+  const deps = {
+    checkWindow: () => [
+      { id: '7777', author: { accountId: 'someone-else' }, timeSpentSeconds: 25200, started: '2026-09-08T09:00:00.000+0300' },
+    ],
+    readEstimate: () => 0,
+    tokens: makeTokenStore(['abc123']),
+  }
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /did not land/i)
 })
 
 test('check-write with an UNKNOWN --fingerprint against a multi-entry key fails cleanly, not by picking a wrong entry', () => {
@@ -358,8 +410,8 @@ test('check-write still works with no --fingerprint when the key has exactly one
   const p = makePlan()
   const deps = {
     checkWindow: () => [{
-      id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200,
-      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `x ${markerFor('abc123')}` }] }] },
+      id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200, started: '2026-09-08T09:00:00.000+0300',
+      comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] },
     }],
     readEstimate: () => 0,
     tokens: makeTokenStore(['abc123']),

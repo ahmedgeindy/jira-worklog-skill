@@ -27,7 +27,7 @@ function makePlan(over = {}) {
       entries: [{
         key: 'PROJ-323', numericId: '999', site: 'x.atlassian.net',
         seconds: 25200, started: '2026-09-08T09:00:00.000+0300',
-        comment: 'status: In Progress [twl:abc123]',
+        comment: 'status: In Progress',
         fingerprint: 'abc123', dedupeState: 'CLEAR', hoursSource: 'stated',
         existingSecondsOnIssue: 0, estimateBefore: 0, evidence: [],
         ...over,

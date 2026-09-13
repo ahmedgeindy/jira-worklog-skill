@@ -3,7 +3,7 @@
 import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { emitManifest } from './emit.mjs'
-import { classify, markerFor, flattenAdf } from '../lib/dedup.mjs'
+import { classify } from '../lib/dedup.mjs'
 
 /**
  * Real, on-disk approval-token store (Ruling 2: guard-bypass detection).
@@ -154,14 +154,35 @@ export function checkWrite({ plan, date, key, fingerprint, deps }) {
     return { ok: false, reason: 'GUARD BYPASSED: write issued without check-cmd (no approval token found for this fingerprint)' }
   }
 
-  const marker = markerFor(planned.fingerprint)
+  // Identify the row this write produced by (started, timeSpentSeconds) rather
+  // than by a marker embedded in the comment. Both fields are frozen in the
+  // plan and present on every row, so nothing tool-shaped has to appear in
+  // text a human reads in Jira.
+  //
+  // BOTH fields are required. `started` alone gives a false DUPLICATE in the
+  // legitimate top-up case (1h already at 09:00, now planning 2h at 09:00 —
+  // classify says EXISTING, the write lands, and two rows then share the same
+  // `started`). `seconds` alone cannot separate two entries of equal length on
+  // the same day.
+  //
+  // Compared as epoch ms: Jira echoes the offset in its own formatting, so a
+  // string compare against the planned value is not reliable.
+  const wantStarted = Date.parse(planned.started)
+  const wantSeconds = Number(planned.seconds)
+  if (!Number.isFinite(wantStarted)) {
+    return { ok: false, reason: `plan entry for ${key} on ${date} has an unparseable started (${planned.started})` }
+  }
+
   const rows = deps.checkWindow({ key, accountId: plan.accountId, zone: plan.zone, isoDate: date })
   const mine = rows.filter(
-    (r) => r?.author?.accountId === plan.accountId && flattenAdf(r.comment).includes(marker),
+    (r) => r?.author?.accountId === plan.accountId &&
+      Date.parse(r.started) === wantStarted &&
+      Number(r.timeSpentSeconds) === wantSeconds,
   )
 
-  if (mine.length === 0) return { ok: false, reason: `no worklog carrying ${marker} found on ${key} for ${date}; the write did not land` }
-  if (mine.length > 1) return { ok: false, reason: `found ${mine.length} rows carrying ${marker} — duplicate write, stop and reconcile manually` }
+  const want = `${planned.started} / ${wantSeconds}s`
+  if (mine.length === 0) return { ok: false, reason: `no worklog matching ${want} found on ${key} for ${date}; the write did not land` }
+  if (mine.length > 1) return { ok: false, reason: `found ${mine.length} rows matching ${want} on ${key} — duplicate write, stop and reconcile manually` }
 
   const before = planned.estimateBefore ?? 0
   if (before > 0) {
