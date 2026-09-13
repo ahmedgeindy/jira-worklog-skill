@@ -2,24 +2,24 @@
   "apiVersion": "v2",
   "command": "jira.workitem.worklog.query",
   "request": {
-    "site": "istnetworks-dev.atlassian.net",
+    "site": "example.atlassian.net",
     "issueId": "K2227759-141"
   },
   "data": [
     {
-      "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/issue/52817/worklog/226590",
+      "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226590",
       "author": {
-        "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/user?accountId=604f241d06cbba006ad6517c",
-        "accountId": "604f241d06cbba006ad6517c",
-        "displayName": "Mohamed Saleh",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
       },
       "updateAuthor": {
-        "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/user?accountId=604f241d06cbba006ad6517c",
-        "accountId": "604f241d06cbba006ad6517c",
-        "displayName": "Mohamed Saleh",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
@@ -33,14 +33,14 @@
             "content": [
               {
                 "type": "text",
-                "text": "SERA | DR | Deploying GCXI ( preparing and applying yaml files ) "
+                "text": "redacted worklog comment text"
               },
               {
                 "type": "hardBreak"
               },
               {
                 "type": "text",
-                "text": "solving issues from the networks bandwidths(the packets wasn't abled to pass through) from the customer side"
+                "text": "redacted worklog comment text"
               }
             ]
           }
@@ -55,19 +55,19 @@
       "issueId": "52817"
     },
     {
-      "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/issue/52817/worklog/226591",
+      "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226591",
       "author": {
-        "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/user?accountId=604f241d06cbba006ad6517c",
-        "accountId": "604f241d06cbba006ad6517c",
-        "displayName": "Mohamed Saleh",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
       },
       "updateAuthor": {
-        "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/user?accountId=604f241d06cbba006ad6517c",
-        "accountId": "604f241d06cbba006ad6517c",
-        "displayName": "Mohamed Saleh",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
@@ -81,14 +81,14 @@
             "content": [
               {
                 "type": "text",
-                "text": "SERA | DR | Deploying GCXI ( preparing and applying yaml files ) "
+                "text": "redacted worklog comment text"
               },
               {
                 "type": "hardBreak"
               },
               {
                 "type": "text",
-                "text": "solving issues from the networks bandwidths(the packets wasn't abled to pass through) from the customer side"
+                "text": "redacted worklog comment text"
               }
             ]
           }
@@ -103,19 +103,19 @@
       "issueId": "52817"
     },
     {
-      "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/issue/52817/worklog/226592",
+      "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226592",
       "author": {
-        "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/user?accountId=604f241d06cbba006ad6517c",
-        "accountId": "604f241d06cbba006ad6517c",
-        "displayName": "Mohamed Saleh",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
       },
       "updateAuthor": {
-        "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/user?accountId=604f241d06cbba006ad6517c",
-        "accountId": "604f241d06cbba006ad6517c",
-        "displayName": "Mohamed Saleh",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
@@ -129,14 +129,14 @@
             "content": [
               {
                 "type": "text",
-                "text": "SERA | DR | Deploying GCXI ( preparing and applying yaml files ) "
+                "text": "redacted worklog comment text"
               },
               {
                 "type": "hardBreak"
               },
               {
                 "type": "text",
-                "text": "solving issues from the networks bandwidths(the packets wasn't abled to pass through) from the customer side"
+                "text": "redacted worklog comment text"
               }
             ]
           }
@@ -151,19 +151,19 @@
       "issueId": "52817"
     },
     {
-      "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/issue/52817/worklog/226593",
+      "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226593",
       "author": {
-        "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/user?accountId=604f241d06cbba006ad6517c",
-        "accountId": "604f241d06cbba006ad6517c",
-        "displayName": "Mohamed Saleh",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
       },
       "updateAuthor": {
-        "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/user?accountId=604f241d06cbba006ad6517c",
-        "accountId": "604f241d06cbba006ad6517c",
-        "displayName": "Mohamed Saleh",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
@@ -177,14 +177,14 @@
             "content": [
               {
                 "type": "text",
-                "text": "SERA | DR | Deploying GCXI ( preparing and applying yaml files ) "
+                "text": "redacted worklog comment text"
               },
               {
                 "type": "hardBreak"
               },
               {
                 "type": "text",
-                "text": "solving issues from the networks bandwidths(the packets wasn't abled to pass through) from the customer side"
+                "text": "redacted worklog comment text"
               }
             ]
           }
@@ -199,19 +199,19 @@
       "issueId": "52817"
     },
     {
-      "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/issue/52817/worklog/226594",
+      "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226594",
       "author": {
-        "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/user?accountId=604f241d06cbba006ad6517c",
-        "accountId": "604f241d06cbba006ad6517c",
-        "displayName": "Mohamed Saleh",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
       },
       "updateAuthor": {
-        "self": "https://api.atlassian.com/ex/jira/11ba363a-dd30-4170-8717-8c2be7b91130/rest/api/3/user?accountId=604f241d06cbba006ad6517c",
-        "accountId": "604f241d06cbba006ad6517c",
-        "displayName": "Mohamed Saleh",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
@@ -225,14 +225,14 @@
             "content": [
               {
                 "type": "text",
-                "text": "SERA | DR | Deploying GCXI ( preparing and applying yaml files ) "
+                "text": "redacted worklog comment text"
               },
               {
                 "type": "hardBreak"
               },
               {
                 "type": "text",
-                "text": "solving issues from the networks bandwidths(the packets wasn't abled to pass through) from the customer side"
+                "text": "redacted worklog comment text"
               }
             ]
           }
