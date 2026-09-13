@@ -18,7 +18,7 @@
 import { execFileSync } from 'node:child_process'
 import {
   existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, mkdtempSync,
-  rmSync, rmdirSync, cpSync, symlinkSync, lstatSync,
+  rmSync, rmdirSync, unlinkSync, cpSync, symlinkSync, lstatSync,
 } from 'node:fs'
 import { homedir, platform, tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
@@ -44,11 +44,16 @@ const TWG_INSTALL_URL = IS_WINDOWS
 // which this process cannot do. So after installing we look here directly rather
 // than asking a PATH that will not be refreshed until the next shell.
 //
-// INSTALL_DIR_OVERRIDE is the installer's own documented knob, and it is honoured
-// here for the same reason: if the installer was told to put twg somewhere else,
-// looking in the default location would report "not installed" about a working
-// install. It also makes this path testable on a machine that already has twg,
-// without touching the real one.
+// INSTALL_DIR_OVERRIDE redirects BOTH the probe above and the --install-dir /
+// -InstallDir argument passed to the installer, so the two cannot disagree. It is
+// what makes the install path testable on a machine that already has twg without
+// touching the real one.
+//
+// Note it is ours, not the installer's: install.sh opens with
+// `INSTALL_DIR_OVERRIDE=""`, wiping any inherited value, so setting it in the
+// environment and expecting the installer to read it installs to the default
+// location while this probe looks elsewhere -- a successful install reported as a
+// missing binary. That is exactly what happened on the first Linux and macOS run.
 const TWG_BIN_DIR = process.env.INSTALL_DIR_OVERRIDE
   ? resolve(process.env.INSTALL_DIR_OVERRIDE)
   : IS_WINDOWS
@@ -208,9 +213,16 @@ function installTwg() {
       return r.status === 0 ? { ok: true } : { ok: false, why: `installer exited ${r.status}`, out: r.out }
     }
 
-    note('bash <downloaded> --yes --skip-login --skip-skills')
+    // --install-dir, NOT the INSTALL_DIR_OVERRIDE environment variable. The shell
+    // installer opens with `INSTALL_DIR_OVERRIDE=""`, which clobbers any inherited
+    // value, so passing it through the environment silently does nothing: the
+    // installer writes to ~/.local/bin while we look somewhere else, and a perfectly
+    // successful install gets reported as "the binary was not found afterwards".
+    const shArgs = [script, '--yes', '--skip-login', '--skip-skills',
+      ...(override ? ['--install-dir', resolve(override)] : [])]
+    note(`bash <downloaded> --yes --skip-login --skip-skills${override ? ' --install-dir …' : ''}`)
     flush()
-    const r = run('bash', [script, '--yes', '--skip-login', '--skip-skills'], { timeout: 900_000 })
+    const r = run('bash', shArgs, { timeout: 900_000 })
     return r.status === 0 ? { ok: true } : { ok: false, why: `installer exited ${r.status}`, out: r.out }
   } finally {
     rmSync(work, { recursive: true, force: true })
@@ -369,12 +381,25 @@ if (!(OPT.link && UNDER_NPX)) {
         note(`${dir} — move it aside, or pass --force`)
         continue
       }
-      // NEVER rmSync a junction. Node's recursive remove has historically hit EPERM
-      // on a Windows reparse point, fallen back to a stat that FOLLOWS the link, and
-      // deleted the target -- which under --link is the repo itself. rmdirSync
-      // unlinks the reparse point and never descends.
-      if (isLink(dir)) rmdirSync(dir)
-      else rmSync(dir, { recursive: true, force: true })
+      // NEVER rmSync a link. Node's recursive remove has historically hit EPERM on a
+      // Windows reparse point, fallen back to a stat that FOLLOWS the link, and
+      // deleted the TARGET -- which under --link is the repo itself.
+      //
+      // How you remove the link is platform-specific, and getting it wrong is not
+      // cosmetic: rmdirSync on a POSIX symlink throws ENOTDIR and crashed setup
+      // outright, so on macOS and Linux `--link` followed by any later run died
+      // before printing a single line. A Windows junction is a directory reparse
+      // point and rmdir is the right call there; a POSIX symlink is unlinked.
+      if (isLink(dir)) {
+        try {
+          if (IS_WINDOWS) rmdirSync(dir)
+          else unlinkSync(dir)
+        } catch {
+          // Whichever call is wrong for this filesystem, the other one is right.
+          if (IS_WINDOWS) unlinkSync(dir)
+          else rmdirSync(dir)
+        }
+      } else rmSync(dir, { recursive: true, force: true })
     }
 
     try {
