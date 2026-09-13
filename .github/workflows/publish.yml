@@ -59,6 +59,11 @@ jobs:
           fi
 
       - name: Refuse to publish a package still marked private
+        # Tags only. This is a publish gate, not a test gate: on a dry run from a
+        # branch the package is *expected* to still be private, and failing here
+        # would stop the run before the tests and audits -- the only parts a dry run
+        # exists to exercise.
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           if [ "$(node -p "require('./package.json').private === true")" = "true" ]; then
             echo "::error::package.json has \"private\": true — npm publish would refuse."
