@@ -1,0 +1,14 @@
+{
+  "name": "jira-worklog-skill",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Agent skill for logging time to Jira through the twg CLI, with a human gate and guarded writes",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"scripts/test/*.test.mjs\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}
