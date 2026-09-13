@@ -111,20 +111,20 @@ test('a SHORT day writes the breach into every one of that day\'s comments', () 
   const p = runPlan({ lines: ['HCFM-323 2h', 'HCFM-324 3h'], isoDate: '2026-09-08', deps: deps() })
   assert.equal(p.days[0].status, 'SHORT')
   for (const e of p.days[0].entries) {
-    assert.match(e.comment, /logged 5\.0h, below the 7h policy floor/)
+    assert.match(e.comment, /at time of logging this day held 5\.0h, below the 7h policy floor/)
   }
 })
 
 test('the breach states the WHOLE day, server time included, not just what is being written', () => {
   const p = runPlan({ lines: ['HCFM-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 3 * 3600 }) })
   assert.equal(p.days[0].status, 'SHORT')
-  assert.match(p.days[0].entries[0].comment, /logged 5\.0h/)
+  assert.match(p.days[0].entries[0].comment, /this day held 5\.0h/)
 })
 
 test('the breach note never computes the gap or names an issue to fill it (D1a)', () => {
   const p = runPlan({ lines: ['HCFM-323 2h'], isoDate: '2026-09-08', deps: deps() })
   const c = p.days[0].entries[0].comment
-  assert.match(c, /logged 2\.0h, below the 7h policy floor/)
+  assert.match(c, /at time of logging this day held 2\.0h, below the 7h policy floor/)
   // The ONLY hour figures in the comment are the day total and the floor. The
   // difference between them - the fillable gap - is never computed anywhere.
   assert.deepEqual([...c.matchAll(/\d+(?:\.\d+)?h\b/g)].map((m) => m[0]), ['2.0h', '7h'])
@@ -263,7 +263,7 @@ test('REGRESSION: a USER_SUPPLIED comment on a SHORT day still carries the breac
   const e = p.days[0].entries[0]
   assert.equal(e.commentSource, 'USER_SUPPLIED')
   assert.match(e.comment, /paired with Sam on an unrelated hotfix/)
-  assert.match(e.comment, /logged 2\.0h, below the 7h policy floor/)
+  assert.match(e.comment, /at time of logging this day held 2\.0h, below the 7h policy floor/)
 })
 
 test('a USER_SUPPLIED comment on a day that MEETS the floor does not carry the breach note', () => {
@@ -287,7 +287,7 @@ test('an EVIDENCED comment on a SHORT day still carries the breach note and stil
   const e = p.days[0].entries[0]
   assert.equal(e.commentSource, 'EVIDENCED')
   assert.match(e.comment, /status: In Progress/)
-  assert.match(e.comment, /logged 2\.0h, below the 7h policy floor/)
+  assert.match(e.comment, /at time of logging this day held 2\.0h, below the 7h policy floor/)
 })
 
 test('the rendered PowerShell line for a SHORT-day USER_SUPPLIED entry is still emittable', () => {

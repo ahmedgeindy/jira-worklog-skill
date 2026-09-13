@@ -1,11 +1,16 @@
 // skills/jira-worklog/scripts/cmd/plan.mjs
 import { parseLine } from '../lib/urls.mjs'
-import { sequenceStarts, hashPlan, validateComment, sanitizeCommentText } from '../lib/plan.mjs'
+import { sequenceStarts, hashPlan, validateComment, sanitizeCommentText, commentMatchesIssue } from '../lib/plan.mjs'
 import { fingerprint, classify } from '../lib/dedup.mjs'
 import { isWorkday, weekdayOf, assertNotFuture, localVsJiraDateDiffers } from '../lib/tz.mjs'
 import { UNSAFE_CHARS } from '../lib/psline.mjs'
 
 const FLOOR_SECONDS = 7 * 3600
+// A day is not implausible at 8h; it is at 12h+. The floor was the only
+// threshold this skill checked, so a 19h day printed "MEETS the 7h floor" and
+// nothing in the preview said otherwise. Anything at or above this asks the
+// human to look again.
+const CEILING_SECONDS = 12 * 3600
 const MAX_DAYS = 5
 
 export function runPlan({ lines, isoDate, deps = {} }) {
@@ -102,7 +107,7 @@ export function runPlan({ lines, isoDate, deps = {} }) {
       }
       if (p.seconds == null) throw new Error(`no hours given for ${p.key}`)
       return {
-        key: p.key, numericId: resolved.numericId, site: resolved.site,
+        key: p.key, numericId: resolved.numericId, site: resolved.site, summary: resolved.summary ?? null,
         seconds: p.seconds, hoursSource: p.hoursSource,
         // The explicit '@HH:MM' from the input line, if any (else null).
         // Consumed by sequenceStarts below to pin this entry's clock time.
@@ -130,7 +135,9 @@ export function runPlan({ lines, isoDate, deps = {} }) {
     // arithmetic and not a null coercion.
     const plannedSeconds = entries.reduce((a, e) => a + Number(e.seconds), 0)
     const totalSeconds = dt.seconds + plannedSeconds
-    const status = totalSeconds < FLOOR_SECONDS ? 'SHORT' : 'MEETS'
+    const status = totalSeconds < FLOOR_SECONDS
+      ? 'SHORT'
+      : (totalSeconds >= CEILING_SECONDS ? 'EXCEEDS' : 'MEETS')
 
     // Case 2 above (both explicit, different times) is allowed, and since the
     // fingerprint is v2 (it now includes `started`) two such entries no longer
@@ -191,6 +198,9 @@ export function runPlan({ lines, isoDate, deps = {} }) {
         ...frozen,
         fingerprint: fp,
         comment,
+        // WARNING only (see lib/plan.mjs#commentMatchesIssue). Rendered at the
+        // gate so a human can catch work logged against the wrong issue.
+        issueVocabMismatch: !commentMatchesIssue(comment, e.summary),
         commentSource,
         dedupeState: classify(rows, { accountId: identity.accountId, seconds: e.seconds }),
         existingSecondsOnIssue: mine.reduce((a, r) => a + Number(r.timeSpentSeconds ?? 0), 0),
@@ -250,5 +260,10 @@ function buildCommentBody(entry) {
  */
 function appendBreachNote(body, day) {
   if (day?.status !== 'SHORT') return body
-  return `${body}. logged ${(Number(day.totalSeconds) / 3600).toFixed(1)}h, below the 7h policy floor`
+  // "at time of logging" is load-bearing, not padding. The note is frozen into
+  // a Jira comment that nothing here can edit, while the day total it describes
+  // keeps moving: top up a 3.5h day to 11h and an unqualified "logged 3.5h,
+  // below the 7h policy floor" becomes a false statement sitting in the record.
+  // Qualified, it stays true forever - it describes the moment, not the day.
+  return `${body}. at time of logging this day held ${(Number(day.totalSeconds) / 3600).toFixed(1)}h, below the 7h policy floor`
 }

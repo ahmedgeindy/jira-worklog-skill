@@ -232,3 +232,56 @@ export function hashPlan(plan) {
   }
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex').slice(0, 12)
 }
+
+/**
+ * Does this comment share ANY meaningful vocabulary with the issue it is being
+ * logged against?
+ *
+ * Motivation, from a real run: 31 days were logged to an issue titled
+ * "Development - guided MSSQL->PG Migrator", and several of the comments
+ * described Superset RLS debugging, a DESIGN.md rewrite, and pgAdmin
+ * hardening. Every guard passed - the hours were the user's, the comments were
+ * their own words, dedup was clean - because nothing ever compared the comment
+ * to the issue. A reviewer reading the worklog sees the mismatch instantly;
+ * the tool did not.
+ *
+ * Deliberately a WARNING, never a refusal. Legitimate work often shares no
+ * vocabulary with its issue title ("fixed the flaky test" on "Q3 Platform
+ * Hardening"), and a false refusal on a timesheet is worse than a false
+ * reassurance. It puts the question in front of the human at the gate; they
+ * decide.
+ *
+ * Returns true when there is overlap OR when no judgement is possible (no
+ * summary, or a summary made entirely of stopwords) - absence of evidence is
+ * not raised as a flag.
+ */
+const VOCAB_STOPWORDS = new Set([
+  'the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'user', 'want', 'need', 'able',
+  'story', 'task', 'bug', 'issue', 'ticket', 'work', 'development', 'dev', 'general', 'tasks',
+  'activities', 'support', 'a', 'an', 'as', 'so', 'to', 'of', 'in', 'on', 'at', 'by', 'is', 'are',
+  'be', 'it', 'or', 'can', 'i', 'we', 'my', 'our', 'new', 'add', 'fix', 'update', 'other',
+])
+
+function vocabTokens(text) {
+  return new Set(
+    String(text ?? '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length >= 4 && !VOCAB_STOPWORDS.has(w)),
+  )
+}
+
+export function commentMatchesIssue(comment, summary) {
+  const want = vocabTokens(summary)
+  if (want.size === 0) return true // nothing to judge against
+  const got = vocabTokens(comment)
+  if (got.size === 0) return true // nothing to judge
+  for (const w of got) {
+    if (want.has(w)) return true
+    // a shared stem is enough: "migrator" vs "migration", "parity" vs "parities"
+    for (const t of want) {
+      if (w.length >= 5 && t.length >= 5 && (w.startsWith(t.slice(0, 5)) || t.startsWith(w.slice(0, 5)))) return true
+    }
+  }
+  return false
+}
