@@ -25,9 +25,27 @@ contain the right files, which is exactly how a dropped `cwd` went unnoticed whi
 the verification step confidently reported passes it had collected from the repo
 rather than from the installed copy.
 
-**`npm run e2e` cannot run in CI as written.** It needs a machine with twg installed
-*and* signed in to Jira; a GitHub runner has neither. Run it locally before tagging.
-The workflow runs the suite and the audits, which need nothing external.
+### Where each platform is proven
+
+| Platform | How | What it covers |
+|---|---|---|
+| Windows | `npm run e2e` locally | all 12 scenarios, signed in |
+| Linux | `.github/workflows/e2e.yml` (`ubuntu-latest`) | fresh-machine auto-install + 13 scenarios |
+| macOS | same workflow (`macos-latest`) | fresh-machine auto-install + 13 scenarios |
+
+A GitHub runner has no Jira session, so the harness takes `--no-jira`: it then
+requires every other check to tick and the **only** failure to be sign-in. Asserting
+merely "exit 2" would pass for a run that failed for six unrelated reasons.
+
+`--allow-twg-install` adds the auto-install scenario, which downloads and runs the
+vendor installer for real. It refuses to run unless `HOME` is inside the harness's own
+workspace — the installer appends to the shell profile at `$HOME`, which on a
+developer machine is their `.zshrc`.
+
+Running the Unix path on real Unix found two bugs that Windows could not: `rmdirSync`
+on a POSIX symlink throws `ENOTDIR` (so `--link` then re-run *crashed*), and the shell
+installer wipes `INSTALL_DIR_OVERRIDE` from the environment at line 20, so redirecting
+the install needs the `--install-dir` flag instead.
 
 `npm run audit` packs a real tarball and scans the extracted files, because the
 `files` whitelist — not the working tree — decides what ships. Auditing the source
