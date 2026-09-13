@@ -21,7 +21,7 @@ here exists to make the write correct the first time.
 have to work that out yourself.
 
 ```bash
-npm test          # 256 tests, no network, no Jira access needed
+npm test          # 264 tests, no network, no Jira access needed
 ```
 
 ## Install
@@ -37,7 +37,7 @@ verify:
 |---|---|---|
 | 1 | checks Node >= 18 | fails |
 | 2 | finds `twg`, then runs `twg upgrade` to self-update it | prints Atlassian's install page and exits 2 — **it will never download an installer for you** |
-| 3 | runs `twg whoami` | tells you to run `twg login` |
+| 3 | runs `twg whoami` | FAILs, quoting twg's own error and its own fix command |
 | 4 | copies the skill into every harness dir that exists on this machine | fails, and never overwrites a directory that isn't this skill |
 
 | Harness | Where it lands |
@@ -73,8 +73,14 @@ does:
   timestamps inside twg's own `twg-*` bundles. A canary skill directory sitting
   beside them came through byte-identical, and the file count was unchanged.
 
-That is why step 2 is safe to run without asking. If twg's behaviour changes,
-re-measure before trusting this paragraph — and use `--no-upgrade` meanwhile.
+That is why step 2 is safe to run without asking.
+
+**What that did not measure:** twg was already current, so the path where it
+genuinely upgrades never ran. That path does download and execute Atlassian's
+own installer under `-y`. That is twg updating itself from its own vendor, which
+is a different thing from this script picking a URL to fetch a binary from — but
+if you would rather make that call yourself, pass `--no-upgrade` and run
+`twg upgrade` by hand. Re-measure if twg's behaviour changes.
 
 ## First: check the safety model holds on YOUR machine
 
@@ -164,10 +170,13 @@ daily on migration 7:30h and for details log write getting from our history
 working on it
 ```
 
-`/jira-worklog` is not a slash command (run `npm run setup`, then just ask for the
-skill by name); `HCFM-133` was the wrong issue; "last month until now" is
-unresolvable; `7:30h` used to mean 30 hours; and "from our history" asks for
-something the skill refuses to do.
+`/jira-worklog` resolved to nothing — not because the slash form is wrong, but
+because the skill was not installed anywhere the harness looks. `npm run setup`
+fixes that; afterwards, asking for the skill by name always works, and clients
+that expose skills as slash commands will offer it as `/jira-worklog` too.
+Then: `HCFM-133` was the wrong issue; "last month until now" is unresolvable;
+`7:30h` used to mean 30 hours; and "from our history" asks for something the
+skill refuses to do.
 
 ## Try it — one entry, one hour, one scratch issue
 
@@ -389,8 +398,8 @@ references/codex.md               the same for Codex CLI - a different mechanism
 references/twg-worklog-contract.md  13 sections, each quoting the command that proved it
 scripts/setup.mjs                 `npm run setup` - verify twg, self-update it, install the skill
 scripts/timelog.mjs               CLI: plan / emit / check-cmd / check-write / verify
-scripts/lib/                      tz, urls, twg, identity, daytotal, dedup, evidence, plan, preview
-scripts/test/                     256 tests
+scripts/lib/                      tz, urls, twg, twgstatus, identity, daytotal, dedup, evidence, plan, preview
+scripts/test/                     264 tests
 ```
 
 ## Reading the commit history

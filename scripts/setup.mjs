@@ -12,10 +12,14 @@
 //   - overwrite an existing skill directory it did not obviously install itself.
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, mkdirSync, rmSync, cpSync, symlinkSync, lstatSync } from 'node:fs'
+import {
+  existsSync, readFileSync, mkdirSync, rmSync, rmdirSync, cpSync, symlinkSync, lstatSync,
+} from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { describeTwgFailure } from './lib/twgstatus.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const IS_WINDOWS = platform() === 'win32'
@@ -37,18 +41,29 @@ const bad = (m) => {
 }
 const step = (n, m) => console.log(`\n[${n}] ${m}`)
 
-/** twg is a normal CLI; we only ever read from it here. Returns null if it is not on PATH. */
+/**
+ * twg is a normal CLI; we only ever read from it here.
+ * Returns {status, out}. status null means it is not on PATH.
+ *
+ * The exit code is returned, not discarded. An earlier version of this file
+ * returned only the text and judged it by regex; twg answers an unauthenticated
+ * `whoami` with a JSON envelope that matched no pattern, so setup printed
+ * "OK {" and reported a 401 as a successful login.
+ */
 function twg(args, { timeout = 120_000 } = {}) {
   try {
-    return execFileSync(IS_WINDOWS ? 'twg.exe' : 'twg', args, {
+    const out = execFileSync(IS_WINDOWS ? 'twg.exe' : 'twg', args, {
       encoding: 'utf8',
       timeout,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+    return { status: 0, out }
   } catch (err) {
-    // ENOENT means not installed; a non-zero exit still carries useful stdout.
-    if (err?.code === 'ENOENT') return null
-    return err?.stdout ?? err?.stderr ?? ''
+    if (err?.code === 'ENOENT') return { status: null, out: '' }
+    return {
+      status: typeof err?.status === 'number' ? err.status : 1,
+      out: `${err?.stdout ?? ''}${err?.stderr ?? ''}`,
+    }
   }
 }
 
@@ -63,7 +78,7 @@ else bad(`node ${process.versions.node} — this skill needs 18 or newer`)
 
 step(2, 'twg CLI')
 const version = twg(['--version'], { timeout: 20_000 })
-if (version === null) {
+if (version.status === null) {
   bad('twg is not on your PATH.')
   info('')
   info('Install it from Atlassian, then run this again:')
@@ -73,38 +88,45 @@ if (version === null) {
   console.log('')
   process.exit(2)
 }
-ok(`twg ${version.trim()}`)
+ok(`twg ${version.out.trim()}`)
 
 if (OPT.noUpgrade) {
   warn('twg upgrade skipped (--no-upgrade)')
 } else {
   // Measured on twg 1.2.8 (2026-09-13): when the binary is already current this
-  // is a true no-op — it does not even run the skills refresh. When it does
-  // upgrade, the refresh rewrites only twg's OWN bundle; a forced refresh with an
-  // unrelated skill directory present left that directory byte-identical.
-  // That is why this is safe to run unattended. Re-measure if twg changes.
-  info('running twg upgrade (self-update; touches only twg\'s own skills)')
-  const out = twg(['upgrade', '-y'], { timeout: 300_000 }) ?? ''
-  for (const line of out.trim().split(/\r?\n/).filter(Boolean)) info(line)
-  ok('twg upgrade finished')
+  // is a true no-op — it does not even run the skills refresh. When forced, the
+  // refresh rewrote only twg's OWN bundle metadata; an unrelated skill directory
+  // placed beside it came through byte-identical.
+  //
+  // NOT measured: the path where twg is actually out of date. That one really does
+  // download and run Atlassian's installer under `-y`. That is twg updating itself
+  // from its own vendor, which is a different thing from this script choosing a URL
+  // to fetch a binary from — but if you would rather decide that yourself, pass
+  // --no-upgrade and run `twg upgrade` by hand.
+  info("running twg upgrade (twg self-update; touches only twg's own skills)")
+  const up = twg(['upgrade', '-y'], { timeout: 300_000 })
+  for (const line of up.out.trim().split(/\r?\n/).filter(Boolean)) info(line)
+  if (up.status === 0) ok('twg upgrade finished')
+  else bad(`twg upgrade exited ${up.status} — see the lines above`)
 }
 
 // ---------------------------------------------------------------- 3. login
 
 step(3, 'Jira authentication')
-const who = twg(['whoami'], { timeout: 60_000 }) ?? ''
-// twg prints the account to stdout on success; on failure it says so in prose.
-// Treat "does not look like an account" as not-logged-in rather than guessing.
-if (/unable to connect/i.test(who)) {
-  bad('twg cannot reach Jira.')
-  info(who.trim())
-  info('')
-  info('If you are running inside a sandbox, this message is usually NOT a network')
-  info('problem — see references/codex.md, "twg says Unable to connect".')
-} else if (!who.trim() || /not (logged|authenticated)|please log ?in/i.test(who)) {
-  bad('twg is not logged in. Run:  twg login')
+const who = twg(['whoami'], { timeout: 60_000 })
+const verdict = describeTwgFailure(who.status, who.out)
+if (verdict.ok) {
+  ok(verdict.summary)
 } else {
-  ok(who.trim().split(/\r?\n/)[0])
+  bad(verdict.summary)
+  // twg's own remediation beats anything written here by hand — the first draft
+  // of this file guessed "twg login" when twg itself says "twg login --force".
+  if (verdict.fix) info(`run:  ${verdict.fix}`)
+  if (/unable to connect/i.test(who.out)) {
+    info('')
+    info('If you are running inside a sandbox, "Unable to connect" is usually NOT')
+    info('a network problem — see references/codex.md, "twg says Unable to connect".')
+  }
 }
 
 // ---------------------------------------------------------------- 4. install
@@ -120,6 +142,14 @@ const targets = [
   { harness: 'Codex CLI', dir: join(homedir(), '.codex', 'skills', 'jira-worklog') },
 ]
 
+function isLink(p) {
+  try {
+    return lstatSync(p).isSymbolicLink()
+  } catch {
+    return false
+  }
+}
+
 // A directory we installed has our SKILL.md in it. Anything else in that path is
 // someone's own work and we stop rather than overwrite it.
 function isOurs(dir) {
@@ -129,6 +159,8 @@ function isOurs(dir) {
     return false
   }
 }
+
+let installed = 0
 
 for (const { harness, dir } of targets) {
   const parent = dirname(dirname(dir)) // ~/.claude or ~/.codex
@@ -142,7 +174,17 @@ for (const { harness, dir } of targets) {
       bad(`${harness} — ${dir} already exists and is not this skill. Move it aside, or pass --force.`)
       continue
     }
-    rmSync(dir, { recursive: true, force: true })
+    if (isLink(dir)) {
+      // NEVER rmSync a junction. Node's recursive remove has historically hit
+      // EPERM on a Windows reparse point, fallen back to a stat that FOLLOWS the
+      // link, and deleted the TARGET's contents — which under --link is this repo.
+      // rmdirSync unlinks the reparse point itself and never descends.
+      // Node 25 here was measured not to follow; the engines floor is 18, and
+      // those versions were not measured. Cheap to be certain.
+      rmdirSync(dir)
+    } else {
+      rmSync(dir, { recursive: true, force: true })
+    }
   }
 
   try {
@@ -150,6 +192,7 @@ for (const { harness, dir } of targets) {
       mkdirSync(dirname(dir), { recursive: true })
       // 'junction' is the only link type Windows grants without elevation.
       symlinkSync(ROOT, dir, IS_WINDOWS ? 'junction' : 'dir')
+      installed += 1
       ok(`${harness} — linked ${dir} -> ${ROOT}`)
     } else {
       mkdirSync(dir, { recursive: true })
@@ -157,6 +200,7 @@ for (const { harness, dir } of targets) {
         const from = join(ROOT, entry)
         if (existsSync(from)) cpSync(from, join(dir, entry), { recursive: true })
       }
+      installed += 1
       ok(`${harness} — copied to ${dir}`)
     }
   } catch (err) {
@@ -173,12 +217,12 @@ for (const { harness, dir } of targets) {
   }
 }
 
-function isLink(p) {
-  try {
-    return lstatSync(p).isSymbolicLink()
-  } catch {
-    return false
-  }
+// A run that installed nothing is a no-op, and reporting "complete" for a no-op is
+// how somebody ends up believing the skill is present when it is not.
+if (installed === 0) {
+  bad('no harness directory was found, so the skill was installed nowhere.')
+  info('Expected ~/.claude (Claude Code) or ~/.codex (Codex CLI) to exist.')
+  info('Create the one you use, or copy this directory there yourself.')
 }
 
 // ---------------------------------------------------------------- verdict
@@ -189,10 +233,10 @@ if (failed) {
   process.exit(2)
 }
 
-console.log('Setup complete.')
+console.log(`Setup complete — installed to ${installed} location${installed === 1 ? '' : 's'}.`)
 console.log('')
 console.log('One thing this script cannot check for you: open a NEW agent session and')
-console.log('confirm the skill is listed. Discovery is the harness\'s job, not ours —')
+console.log("confirm the skill is listed. Discovery is the harness's job, not ours —")
 console.log('a copied file is not proof the harness found it.')
 console.log('')
 console.log('Then read the "Check the safety model holds on YOUR machine" section of')
