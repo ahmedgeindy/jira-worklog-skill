@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { redact, changelogEvidence } from '../lib/evidence.mjs'
 
 test('a line naming a password is DROPPED, not masked', () => {
-  assert.equal(redact('Postgres pwd (hivecfm_admin) exposed; rotation req\'d'), null)
+  assert.equal(redact('Postgres pwd (app_admin) exposed; rotation req\'d'), null)
   assert.equal(redact('set PASSWORD=hunter2'), null)
   assert.equal(redact('token: abc123'), null)
   assert.equal(redact('PAT embedded in clone url'), null)

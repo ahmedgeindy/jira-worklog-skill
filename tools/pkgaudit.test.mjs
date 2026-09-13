@@ -65,6 +65,26 @@ test('an unrelated repo name is caught', () => {
 
 // ---------------------------------------------------------------- the org tier
 
+test('the strings removed in the public scrub are all detectable', () => {
+  // Positive controls for the scrub itself. Without these, "audit:public is CLEAN"
+  // only says nobody has pasted a real example back in *that the old rules knew about*.
+  const sev = { severities: ['secret', 'pii', 'internal', 'org'] }
+  assert.ok(ids('https://example.atlassian.net/browse/X-1', sev).includes('internal-host'))
+  assert.ok(ids('the istnetworks tenant', sev).includes('internal-org'))
+  assert.ok(ids('logged 2h on PROJ-223', sev).includes('internal-issue-key'))
+  assert.ok(ids('the HiveCFM migrator', sev).includes('internal-product'))
+  assert.ok(ids('hive-cfm core', sev).includes('internal-product'))
+  assert.ok(ids('source DB ISTServiceEdge', sev).includes('internal-product'))
+})
+
+test('the synthetic replacements the scrub introduced are clean', () => {
+  const sev = { severities: ['secret', 'pii', 'internal', 'org'] }
+  assert.deepEqual(ids('https://example.atlassian.net/browse/PROJ-323 2h', sev), [])
+  assert.deepEqual(ids('proj-323 normalises to PROJ-323', sev), [])
+  assert.deepEqual(ids('Development - data import tool', sev), [])
+  assert.deepEqual(ids('Postgres pwd (app_admin) exposed', sev), [])
+})
+
 test('org-identifying strings are found but are NOT reported in private mode', () => {
   const text = 'https://example.atlassian.net/browse/PROJ-223 :: STC-BH sync'
   const priv = ids(text, { severities: ['secret', 'pii', 'internal'] })

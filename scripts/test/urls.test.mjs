@@ -34,7 +34,7 @@ test('board URL with selectedIssue is accepted via the query string', () => {
 })
 
 test('a bare lowercase key is normalised and carries no host', () => {
-  const r = parseLine('PROJ-323 4h')
+  const r = parseLine('proj-323 4h')
   assert.equal(r.key, 'PROJ-323')
   assert.equal(r.host, null)
 })

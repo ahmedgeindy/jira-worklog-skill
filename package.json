@@ -12,7 +12,8 @@
     "test": "node --test \"scripts/test/*.test.mjs\" \"tools/*.test.mjs\"",
     "audit": "node tools/audit-package.mjs",
     "audit:public": "node tools/audit-package.mjs --public",
-    "audit:selftest": "node tools/audit-package.mjs --self-test"
+    "audit:selftest": "node tools/audit-package.mjs --self-test",
+    "e2e": "node tools/e2e-setup.mjs"
   },
   "files": [
     "SKILL.md",

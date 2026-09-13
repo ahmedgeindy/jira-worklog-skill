@@ -10,7 +10,24 @@ npm test                      # full suite, no network, no Jira access
 npm run audit:selftest        # proves the audit can still catch a planted credential
 npm run audit                 # what the tarball ACTUALLY contains (private rules)
 npm run audit:public          # stricter: also fails on org-identifying strings
+npm run e2e                   # 12 scenarios against the installed tarball
 ```
+
+`npm run e2e` is the one that catches what unit tests cannot. It packs, installs the
+tarball into a throwaway prefix, and runs the package bin from a different cwd
+against a disposable `HOME`, asserting an exit code *and* substrings for each of:
+clean install, repeat run, twg present, twg missing, Jira auth missing, a foreign
+directory in the target path, unrelated skills beside ours, no harness directory at
+all, `--link` under npx, junction-target survival, and an unknown subcommand.
+
+Running setup from the repo is not a substitute. The repo's own directory happens to
+contain the right files, which is exactly how a dropped `cwd` went unnoticed while
+the verification step confidently reported passes it had collected from the repo
+rather than from the installed copy.
+
+**`npm run e2e` cannot run in CI as written.** It needs a machine with twg installed
+*and* signed in to Jira; a GitHub runner has neither. Run it locally before tagging.
+The workflow runs the suite and the audits, which need nothing external.
 
 `npm run audit` packs a real tarball and scans the extracted files, because the
 `files` whitelist — not the working tree — decides what ships. Auditing the source
@@ -19,6 +36,19 @@ directory would be a check that passes against the wrong thing.
 `audit:selftest` exists because a scanner nobody has watched fail proves nothing. It
 plants a fake credential inside a path the whitelist ships and requires the scanner
 to catch it before the real report is believed.
+
+## Scope: not decided yet
+
+`package.json` still says `jira-worklog-skill` and carries `"private": true`. The
+scope must be settled before the first publish, because a published name is
+effectively permanent (the unpublish window is 72 hours, and the name stays taken).
+
+`@ahmedgeindy/jira-worklog` is the recommendation. `@istnetworks/...` is deliberately
+**not** used: on npm, whoever creates an organisation owns it, so creating a
+company-named scope from a personal account puts the company's namespace under one
+employee's login. That is a company decision and a company account, not a technical
+step to be taken in passing. Moving later is cheap — publish the same tarball under
+the company scope and `npm deprecate` the personal one with a pointer.
 
 ## The first release is manual. It cannot be automated.
 
