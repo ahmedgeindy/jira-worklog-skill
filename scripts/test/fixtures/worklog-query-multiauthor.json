@@ -9,17 +9,17 @@
     {
       "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226590",
       "author": {
-        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
-        "accountId": "a1b2c3d4e5f60718293a4b5c",
-        "displayName": "Second Author",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
       },
       "updateAuthor": {
-        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
-        "accountId": "a1b2c3d4e5f60718293a4b5c",
-        "displayName": "Second Author",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
@@ -33,14 +33,14 @@
             "content": [
               {
                 "type": "text",
-                "text": "work logged"
+                "text": "redacted worklog comment text"
               },
               {
                 "type": "hardBreak"
               },
               {
                 "type": "text",
-                "text": "work logged"
+                "text": "redacted worklog comment text"
               }
             ]
           }
@@ -57,17 +57,17 @@
     {
       "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226591",
       "author": {
-        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
-        "accountId": "a1b2c3d4e5f60718293a4b5c",
-        "displayName": "Second Author",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
       },
       "updateAuthor": {
-        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
-        "accountId": "a1b2c3d4e5f60718293a4b5c",
-        "displayName": "Second Author",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
@@ -81,14 +81,14 @@
             "content": [
               {
                 "type": "text",
-                "text": "work logged"
+                "text": "redacted worklog comment text"
               },
               {
                 "type": "hardBreak"
               },
               {
                 "type": "text",
-                "text": "work logged"
+                "text": "redacted worklog comment text"
               }
             ]
           }
@@ -105,17 +105,17 @@
     {
       "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226592",
       "author": {
-        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
-        "accountId": "a1b2c3d4e5f60718293a4b5c",
-        "displayName": "Second Author",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
       },
       "updateAuthor": {
-        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
-        "accountId": "a1b2c3d4e5f60718293a4b5c",
-        "displayName": "Second Author",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
@@ -129,14 +129,14 @@
             "content": [
               {
                 "type": "text",
-                "text": "work logged"
+                "text": "redacted worklog comment text"
               },
               {
                 "type": "hardBreak"
               },
               {
                 "type": "text",
-                "text": "work logged"
+                "text": "redacted worklog comment text"
               }
             ]
           }
@@ -153,17 +153,17 @@
     {
       "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226593",
       "author": {
-        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
-        "accountId": "a1b2c3d4e5f60718293a4b5c",
-        "displayName": "Second Author",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
       },
       "updateAuthor": {
-        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
-        "accountId": "a1b2c3d4e5f60718293a4b5c",
-        "displayName": "Second Author",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
@@ -177,14 +177,14 @@
             "content": [
               {
                 "type": "text",
-                "text": "work logged"
+                "text": "redacted worklog comment text"
               },
               {
                 "type": "hardBreak"
               },
               {
                 "type": "text",
-                "text": "work logged"
+                "text": "redacted worklog comment text"
               }
             ]
           }
@@ -201,17 +201,17 @@
     {
       "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/issue/52817/worklog/226594",
       "author": {
-        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
-        "accountId": "a1b2c3d4e5f60718293a4b5c",
-        "displayName": "Second Author",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
       },
       "updateAuthor": {
-        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=a1b2c3d4e5f60718293a4b5c",
-        "accountId": "a1b2c3d4e5f60718293a4b5c",
-        "displayName": "Second Author",
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/user?accountId=aaaaaaaaaaaaaaaaaaaaaaaa",
+        "accountId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+        "displayName": "Another Teammate",
         "active": true,
         "timeZone": "Asia/Riyadh",
         "accountType": "atlassian"
@@ -225,14 +225,14 @@
             "content": [
               {
                 "type": "text",
-                "text": "work logged"
+                "text": "redacted worklog comment text"
               },
               {
                 "type": "hardBreak"
               },
               {
                 "type": "text",
-                "text": "work logged"
+                "text": "redacted worklog comment text"
               }
             ]
           }
