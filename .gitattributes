@@ -1,0 +1,5 @@
+# Keep .mjs LF on every platform: these files are copied into agent skill
+# directories and diffed across machines, and a CRLF flip makes every line of a
+# review look changed.
+* text=auto eol=lf
+*.ps1 text eol=crlf

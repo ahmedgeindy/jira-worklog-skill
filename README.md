@@ -17,24 +17,64 @@ here exists to make the write correct the first time.
 2. **Node 18+.** Zero runtime dependencies; the tests use `node:test`.
 3. **A Jira account whose worklogs you are allowed to write.**
 
+`npm run setup` checks all three and tells you which one is missing, so you do not
+have to work that out yourself.
+
 ```bash
-npm test          # 252 tests, no network, no Jira access needed
+npm test          # 256 tests, no network, no Jira access needed
 ```
 
 ## Install
 
-Copy or symlink this directory to wherever your agent reads skills from:
+```bash
+npm run setup
+```
 
-| Harness | Location |
+That is the whole thing. It does four steps and stops on the first one it cannot
+verify:
+
+| Step | What it does | If it can't |
+|---|---|---|
+| 1 | checks Node >= 18 | fails |
+| 2 | finds `twg`, then runs `twg upgrade` to self-update it | prints Atlassian's install page and exits 2 — **it will never download an installer for you** |
+| 3 | runs `twg whoami` | tells you to run `twg login` |
+| 4 | copies the skill into every harness dir that exists on this machine | fails, and never overwrites a directory that isn't this skill |
+
+| Harness | Where it lands |
 |---|---|
-| Claude Code | `~/.claude/skills/jira-worklog/` or `<project>/.claude/skills/jira-worklog/` |
+| Claude Code | `~/.claude/skills/jira-worklog/` |
 | Codex CLI | `~/.codex/skills/jira-worklog/` |
 
-On Windows a junction avoids keeping two copies in sync:
+A harness whose config dir doesn't exist is skipped with a `SKIP` line, not an error.
 
-```powershell
-New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\jira-worklog" -Target "<path to this repo>"
-```
+Flags: `--link` makes a junction/symlink instead of a copy (live edits, for people
+working *on* the skill), `--no-upgrade` leaves `twg` alone, `--force` overwrites a
+target that isn't ours.
+
+**Re-running is safe** — it is idempotent, and it refuses rather than clobbering a
+directory it did not install.
+
+### One check setup cannot do for you
+
+Open a **new** agent session and confirm the skill is listed. A copied file is not
+proof the harness found it; discovery is the harness's job. On Claude Code you
+should see `jira-worklog` in the skill list, and asking for it by name should pull
+it in.
+
+### About `twg upgrade` running unattended
+
+Measured on twg 1.2.8, 2026-09-13. Its help text says it will "silently refresh
+detected installed skills with overwrite", which reads alarming. What it actually
+does:
+
+- when the binary is already current, it is a **complete no-op** — it does not even
+  run the skills refresh;
+- when forced (`--refresh-skills`), it rewrote **only** `.twg-install.json`
+  timestamps inside twg's own `twg-*` bundles. A canary skill directory sitting
+  beside them came through byte-identical, and the file count was unchanged.
+
+That is why step 2 is safe to run without asking. If twg's behaviour changes,
+re-measure before trusting this paragraph — and use `--no-upgrade` meanwhile.
 
 ## First: check the safety model holds on YOUR machine
 
@@ -51,6 +91,83 @@ for the write line, and that is a property of **your** settings, not of the tool
 
 If PowerShell is blanket-allowed in your setup, the Claude Code gate is decorative. Use the Codex
 procedure instead.
+
+## How to ask for it — writing a prompt that works
+
+You talk to this skill in ordinary language. The agent turns what you say into the
+`plan / emit / guard / verify` loop below. So the prompt only has to be **specific**,
+not formatted.
+
+A prompt that works:
+
+```
+Use the jira-worklog skill. Issue HCFM-223. Every Sunday-Thursday from
+2026-08-02 to 2026-09-13, 7.5h starting @09:00. Skip any day that already
+has my time on it. Show me the day-by-day plan before writing anything.
+```
+
+Five things make that one work, and each is a real mistake somebody made first.
+
+**1. Name the work item, and name the right one.**
+`HCFM-223`, not "this task" or "the migration one". The skill logs where you point
+it. The most expensive mistake available here is a confidently-executed backfill
+onto the wrong key — the hours are right, the dates are right, and 230 hours land
+on somebody else's issue.
+
+**2. Give explicit dates, never relative ones.**
+"last month until now" means one thing in your head and a different thing next
+Tuesday. Worse, it is silent about days that already hold time. Write
+`2026-08-02 to 2026-09-13` and say what to do about days that already have
+something: *skip*, or *add on top*. That single clause is the difference between
+7.5h days and 19h days.
+
+**3. Write hours the skill can't misread.**
+`7.5h` or `7h30m`. `7:30` and `7:30h` also work now — but an earlier version read
+`7:30h` as **thirty hours**, because the scanner matched the `30h` and threw the
+rest away. Exit code 0, plausible number, four times the real time. Fixed, tested,
+and the reason `d`/`w` units are refused outright: on a Jira site `1d` is usually
+8h, not 24h, and guessing wrong there is a 3× error nobody notices.
+
+**4. Ask for the plan before the write.**
+"Show me the day-by-day plan before writing anything." The skill is built to stop
+there anyway, but saying it out loud means you get the table — date, hours, running
+day total, and the `STATUS` of each day — while it is still free to change your mind.
+
+**5. Don't ask it to invent the comment text.**
+"write the details from our work history" is **not something this skill does.** It
+grounds a comment in the issue's own Jira changelog, or in words you supply. Given
+neither, it refuses with `no evidence for this issue on this day; the comment must
+come from the user` — on purpose. A worklog comment is a claim about what a person
+did; a plausible-sounding guess is the one thing worse than a blank.
+
+If you do want comments, hand it the material:
+
+```
+...7.5h @09:00, and use these notes for the comments: <paste your standup
+notes, or point me at the file>. One line per day, no invention.
+```
+
+or just let it fall back to the changelog:
+
+```
+...7.5h @09:00, comments from each issue's own Jira history where there is any,
+blank where there isn't.
+```
+
+### The same prompt, written badly
+
+For contrast — this is a real first draft, and every numbered problem above is in it:
+
+```
+/jira-worklog use this task HCFM-133 log all last month until now our working
+daily on migration 7:30h and for details log write getting from our history
+working on it
+```
+
+`/jira-worklog` is not a slash command (run `npm run setup`, then just ask for the
+skill by name); `HCFM-133` was the wrong issue; "last month until now" is
+unresolvable; `7:30h` used to mean 30 hours; and "from our history" asks for
+something the skill refuses to do.
 
 ## Try it — one entry, one hour, one scratch issue
 
@@ -246,6 +363,9 @@ That last one is a warning, not a block — you decide.
 ## Things that will bite you (all measured, not theorised)
 
 - **`1d` is 8h on a Jira site, not 24h.** `d`/`w` units are refused outright; use hours or minutes.
+- **`7:30h` used to parse as 30 hours.** The h/m scanner is a global match, so it found the `30h`
+  inside the clock form and discarded the `7:`. Exit 0, plausible number, 4x the intended time. A
+  `:` now commits the string to `H:MM` and anything else after it is refused rather than guessed at.
 - **`--started-after` with an ISO string is `parseInt`-truncated** to the year, i.e. epoch 1970. The
   filter silently becomes a no-op and returns everything. Integer epoch-ms only.
 - **`--started-after` / `--started-before` are strictly exclusive.** A day window must be sent as
@@ -267,9 +387,10 @@ SKILL.md                          the procedure the agent follows
 references/claude-code.md         how a write executes under Claude Code, and why that is consent
 references/codex.md               the same for Codex CLI - a different mechanism, for real reasons
 references/twg-worklog-contract.md  13 sections, each quoting the command that proved it
+scripts/setup.mjs                 `npm run setup` - verify twg, self-update it, install the skill
 scripts/timelog.mjs               CLI: plan / emit / check-cmd / check-write / verify
 scripts/lib/                      tz, urls, twg, identity, daytotal, dedup, evidence, plan, preview
-scripts/test/                     252 tests
+scripts/test/                     256 tests
 ```
 
 ## Reading the commit history

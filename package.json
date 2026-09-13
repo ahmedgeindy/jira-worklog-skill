@@ -4,9 +4,19 @@
   "private": true,
   "description": "Agent skill for logging time to Jira through the twg CLI, with a human gate and guarded writes",
   "type": "module",
+  "bin": {
+    "jira-worklog-skill": "scripts/setup.mjs"
+  },
   "scripts": {
+    "setup": "node scripts/setup.mjs",
     "test": "node --test \"scripts/test/*.test.mjs\""
   },
+  "files": [
+    "SKILL.md",
+    "README.md",
+    "references",
+    "scripts"
+  ],
   "engines": {
     "node": ">=18"
   },
