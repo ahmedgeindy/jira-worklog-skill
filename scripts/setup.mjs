@@ -14,7 +14,8 @@
 
 import { execFileSync } from 'node:child_process'
 import {
-  existsSync, readFileSync, mkdirSync, rmSync, rmdirSync, cpSync, symlinkSync, lstatSync,
+  existsSync, readFileSync, readdirSync, mkdirSync, rmSync, rmdirSync, cpSync, symlinkSync,
+  lstatSync,
 } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
@@ -89,11 +90,19 @@ const NPM_CLI = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'n
 const npmArgv = (argv) =>
   (existsSync(NPM_CLI) ? [process.execPath, [NPM_CLI, ...argv]] : ['npm', argv])
 
-/** Run a command for its output. Returns {status, out}; status null = not on PATH. */
-function run(cmd, argv, { timeout = 120_000 } = {}) {
+/**
+ * Run a command for its output. Returns {status, out}; status null = not on PATH.
+ *
+ * `cwd` is destructured explicitly. An earlier version took only `timeout`, so the
+ * `cwd` passed by the verification step was silently dropped and the child inherited
+ * this process's directory instead. Run from the repo that still printed
+ * "264 tests pass from the installed copy" -- it had tested the repo. A check that
+ * passes against the wrong thing is worse than no check.
+ */
+function run(cmd, argv, { timeout = 120_000, cwd } = {}) {
   try {
     const out = execFileSync(cmd, argv, {
-      encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf8', timeout, cwd, stdio: ['ignore', 'pipe', 'pipe'],
     })
     return { status: 0, out }
   } catch (err) {
@@ -280,23 +289,66 @@ if (installed === 0 && !(OPT.link && UNDER_NPX)) {
 
 // ---------------------------------------------------------------- 7. verification
 
-// Prove the installed copy runs, rather than trusting that the copy succeeded.
+// Prove the installed copy RUNS, rather than trusting that the copy succeeded.
 // Reads only: the suite touches no network and writes nothing to Jira.
+//
+// "0 tests passed" is a FAILURE, not a pass. An exit code of 0 from a runner that
+// found no tests is the most convincing false green available here -- it is exactly
+// what a broken glob, a missing directory or a botched copy produces, and the naive
+// version of this check printed a tick beside the word "verification" for it.
+function countsFrom(text) {
+  // node --test uses the spec reporter on a TTY and TAP when piped; accept both.
+  const grab = (key) => {
+    const m = new RegExp('^(?:#|\\u2139)\\s*' + key + '\\s+(\\d+)', 'm').exec(text)
+    return m ? Number(m[1]) : null
+  }
+  return { tests: grab('tests'), passed: grab('pass'), failures: grab('fail') }
+}
+
 if (installed > 0) {
   const { dir } = installedDirs[0]
-  const t = run(process.execPath, ['--test', 'scripts/test/*.test.mjs'], {
-    timeout: 300_000, cwd: dir,
-  })
-  const m = /^# pass (\d+)/m.exec(t.out) ?? /pass (\d+)/.exec(t.out)
-  const count = m ? m[1] : '?'
   const frontmatter = /^---\r?\n[\s\S]*?\bname:\s*jira-worklog\b/m
     .test(readFileSync(join(dir, 'SKILL.md'), 'utf8'))
 
-  if (t.status === 0 && frontmatter) pass('verification', `${count} tests pass from the installed copy`)
-  else if (!frontmatter) fail('verification', 'installed SKILL.md has no usable frontmatter')
-  else {
-    fail('verification', `the installed copy's own tests failed (exit ${t.status})`)
-    note(t.out.trim().split(/\r?\n/).slice(-4).join(' / '))
+  // The glob is expanded here rather than handed to node --test as a pattern:
+  // whether the runner expands it depends on the Node version and on how the
+  // process was launched, and when it does not, the runner finds nothing, exits 0,
+  // and the result is indistinguishable from success.
+  let testFiles = []
+  try {
+    testFiles = readdirSync(join(dir, 'scripts', 'test'))
+      .filter((f) => f.endsWith('.test.mjs'))
+      // Forward slashes deliberately, NOT path.join: node --test treats each argument
+      // as a glob pattern, and in a glob a backslash is an ESCAPE. The Windows form
+      // 'scripts\test\x.test.mjs' therefore reduces to 'scriptstestx.test.mjs', which
+      // matches nothing -- the runner then exits 0 having run nothing at all.
+      .map((f) => `scripts/test/${f}`)
+  } catch { /* handled by the empty check below */ }
+
+  if (!frontmatter) {
+    fail('verification', 'the installed SKILL.md has no usable frontmatter')
+  } else if (testFiles.length === 0) {
+    fail('verification', 'no test files found in the installed copy')
+    note(`Looked in ${join(dir, 'scripts', 'test')}`)
+  } else {
+    const t = run(process.execPath, ['--test', ...testFiles], { timeout: 300_000, cwd: dir })
+    const { tests, passed, failures } = countsFrom(t.out)
+
+    if (t.status !== 0) {
+      fail('verification', `the installed copy's tests failed (exit ${t.status})`)
+      for (const l of t.out.trim().split(/\r?\n/).slice(-4)) note(l)
+    } else if (tests === null) {
+      fail('verification', 'could not read a test count from the runner output')
+      note('An unreadable result is treated as failure, not assumed to be success.')
+      for (const l of t.out.trim().split(/\r?\n/).slice(-4)) note(l)
+    } else if (tests === 0) {
+      fail('verification', `the runner exited 0 but ran NO tests (${testFiles.length} files present)`)
+      note('Exit 0 with nothing run proves nothing, so it counts as a failure.')
+    } else if (failures) {
+      fail('verification', `${failures} of ${tests} tests failed in the installed copy`)
+    } else {
+      pass('verification', `${passed ?? tests} tests pass from the installed copy`)
+    }
   }
 } else {
   skip('verification', 'nothing installed to verify')
