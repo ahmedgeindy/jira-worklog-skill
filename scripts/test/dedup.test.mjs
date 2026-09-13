@@ -1,7 +1,7 @@
 // skills/jira-worklog/scripts/test/dedup.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fingerprint, markerFor, flattenAdf, classify, checkWindow } from '../lib/dedup.mjs'
+import { fingerprint, flattenAdf, classify, checkWindow } from '../lib/dedup.mjs'
 
 const ME = '712020:862ee292-a94d-488e-9f54-f5cb50dfd07b'
 const FP = fingerprint({ accountId: ME, key: 'HCFM-323', isoDate: '2026-09-08', seconds: 10800 })
@@ -30,33 +30,37 @@ test('flattenAdf tolerates a plain string comment', () => {
   assert.equal(flattenAdf('already plain'), 'already plain')
 })
 
-test('tier 1: my marker present means DUPLICATE', () => {
-  const rows = [{ author: { accountId: ME }, timeSpentSeconds: 999, comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: `work ${markerFor(FP)}` }] }] } }]
-  assert.equal(classify(rows, { accountId: ME, seconds: 10800, fp: FP }), 'DUPLICATE')
+test('a differing duration on the same issue/day is EXISTING, not DUPLICATE - comment text is never consulted', () => {
+  // The '[twl:<fp>]' comment marker was removed: no tool metadata reaches a
+  // human reading the worklog in Jira. classify therefore decides on
+  // author+duration alone, and a same-author row of a DIFFERENT length must
+  // stay writable (this is the top-up flow).
+  const rows = [{ author: { accountId: ME }, timeSpentSeconds: 999, comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'work' }] }] } }]
+  assert.equal(classify(rows, { accountId: ME, seconds: 10800 }), 'EXISTING')
 })
 
 test('tier 2: same author, same day, same issue, same seconds means DUPLICATE', () => {
   const rows = [{ author: { accountId: ME }, timeSpentSeconds: 10800 }]
-  assert.equal(classify(rows, { accountId: ME, seconds: 10800, fp: FP }), 'DUPLICATE')
+  assert.equal(classify(rows, { accountId: ME, seconds: 10800 }), 'DUPLICATE')
 })
 
 test('tier 3: same author/day/issue with DIFFERENT seconds is EXISTING, never CLEAR', () => {
   const rows = [{ author: { accountId: ME }, timeSpentSeconds: 7200 }]
-  assert.equal(classify(rows, { accountId: ME, seconds: 10800, fp: FP }), 'EXISTING')
+  assert.equal(classify(rows, { accountId: ME, seconds: 10800 }), 'EXISTING')
 })
 
 test('only other authors present means CLEAR for me', () => {
   const rows = [{ author: { accountId: 'someone-else' }, timeSpentSeconds: 25200 }]
-  assert.equal(classify(rows, { accountId: ME, seconds: 10800, fp: FP }), 'CLEAR')
+  assert.equal(classify(rows, { accountId: ME, seconds: 10800 }), 'CLEAR')
 })
 
 test('no rows at all means CLEAR', () => {
-  assert.equal(classify([], { accountId: ME, seconds: 10800, fp: FP }), 'CLEAR')
+  assert.equal(classify([], { accountId: ME, seconds: 10800 }), 'CLEAR')
 })
 
 test('a row with no author accountId is AMBIGUOUS, not CLEAR', () => {
   const rows = [{ timeSpentSeconds: 3600 }]
-  assert.equal(classify(rows, { accountId: ME, seconds: 10800, fp: FP }), 'AMBIGUOUS')
+  assert.equal(classify(rows, { accountId: ME, seconds: 10800 }), 'AMBIGUOUS')
 })
 
 // --- I1: checkWindow is the ONLY live read standing between a re-run and a
@@ -84,7 +88,7 @@ test('checkWindow returns the rows when the count matches the declared total', (
 test('checkWindow accepts a proven ZERO, so a genuinely clean day still passes', () => {
   const out = checkWindow({ ...WINDOW_ARGS, deps: { run: fakeRun({ data: [], meta: { pagination: { total: 0 } } }) } })
   assert.deepEqual(out, [])
-  assert.equal(classify(out, { accountId: ME, seconds: 10800, fp: FP }), 'CLEAR')
+  assert.equal(classify(out, { accountId: ME, seconds: 10800 }), 'CLEAR')
 })
 
 test('checkWindow reads the {worklogs: []} shape as well as a bare array', () => {
