@@ -355,7 +355,7 @@ test('case 1: same issue twice, NEITHER with @HH:MM, is refused (today\'s origin
 
 test('case 2: same issue twice, BOTH with DIFFERENT @HH:MM, is ALLOWED', () => {
   const p = runPlan({
-    lines: ['PROJ-323 1h @11:00 :: daily standup', 'PROJ-323 2.5h @13:00 :: STC-BH meeting'],
+    lines: ['PROJ-323 1h @11:00 :: daily standup', 'PROJ-323 2.5h @13:00 :: partner sync'],
     isoDate: '2026-09-08', deps: deps(),
   })
   assert.equal(p.days[0].entries.length, 2)

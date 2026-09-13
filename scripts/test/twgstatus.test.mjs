@@ -57,10 +57,10 @@ test('exit 0 with no output is NOT success - whoami must say who', () => {
 })
 
 test('a real whoami passes and reports the name', () => {
-  const real = '\n  Test User\n  Account ID:    712020:862ee292\n  Status:        active\n'
+  const real = '\n  Example Dev\n  Account ID:    712020:00000000-1111\n  Status:        active\n'
   const v = describeTwgFailure(0, real)
   assert.equal(v.ok, true)
-  assert.equal(v.summary, 'Test User')
+  assert.equal(v.summary, 'Example Dev')
 })
 
 test('prose mentioning a brace does not get mistaken for an envelope', () => {
