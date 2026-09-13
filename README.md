@@ -93,6 +93,147 @@ printf '2026-01-13\tYOUR-123 7h :: schema convergence\n2026-01-14\tYOUR-123 6h :
 
 Each day still gets its own gate, its own guards and its own writes. Only generation is batched.
 
+---
+
+## Worked example: a real work item, start to finish
+
+Say you spent Tuesday 12 January on **PROJ-223**. Here is the whole loop with real output.
+
+### Input formats — the issue is named by key or by URL
+
+Every line is `<issue> <hours> [@HH:MM] [:: comment]`. All of these name the same work item:
+
+```
+PROJ-223 7.5h
+PROJ-223 7.5h                                              # case is normalised
+https://yoursite.atlassian.net/browse/PROJ-223 7.5h        # browse URL
+https://yoursite.atlassian.net/jira/software/c/projects/HCFM/boards/12?selectedIssue=PROJ-223 7.5h
+```
+
+Hours accept `7.5h`, `7h 30m`, `450m`, `7:30`, or a bare `7.5` (meaning hours).
+**`1d` and `1w` are refused** — on a Jira site `1d` is 8h, not 24h, and a silent 3× error on a
+timesheet is not worth the convenience.
+
+Pasting a URL is checked, not trusted: the host in the URL must match the site the key actually
+resolves to, and the key is read from the **path**, so a poisoned `?jql=key=PROJ-999` cannot
+override `/browse/PROJ-223`.
+
+### 1. Plan — read-only, touches nothing
+
+```bash
+echo 'PROJ-223 7.5h @09:00 :: parity engine checkpoint resume fix, 2114 tests green' \
+  | node scripts/timelog.mjs plan --date 2026-01-12 --out plan.json
+```
+
+```
+DAY 2026-01-12 (Tuesday)
+  already on server: 0.0h
+
+  PROJ-223  7.5h  @09:00  (start PINNED by you)  [CLEAR]  (comment USER_SUPPLIED, not evidence-derived)
+      comment: parity engine checkpoint resume fix, 2114 tests green
+      & 'twg' 'jira' 'workitem' 'worklog' 'add' '--issue-id' 'PROJ-223' '--time-spent-seconds' '27000' '--started' '2026-01-12T09:00:00.000+0300' '--adjust-estimate' 'leave' '--notify-users' 'false' '--comment-format' 'plain' '--comment' 'parity engine checkpoint resume fix, 2114 tests green' '-o' 'json'
+
+  resulting day total: 7.5h
+  STATUS: MEETS the 7h floor
+
+  planHash: 64c830368fd8
+```
+
+Read it. `[CLEAR]` means you have no time on that issue that day. `already on server` is what is
+there now — **the day total counts existing time**, so this is how you see a day heading over.
+
+### 2. Emit and guard
+
+```bash
+node scripts/timelog.mjs emit --plan plan.json --date 2026-01-12 --expect-hash 64c830368fd8
+node scripts/timelog.mjs check-cmd --plan plan.json --date 2026-01-12 \
+  --expect-hash 64c830368fd8 --cmd "<the emitted line, verbatim>"
+# -> OK
+```
+
+`check-cmd` re-reads the server and compares the line byte-for-byte against the plan. `OK` also
+leaves an approval token that step 4 consumes.
+
+### 3. Run that exact line
+
+Per your harness (`references/claude-code.md` or `references/codex.md`). Jira answers with the new
+worklog id:
+
+```
+"started": "2026-01-12T09:00:00.000+0300",
+"timeSpent": "7h 30m",
+"id": "227701",
+```
+
+### 4. Verify it landed — against the server, not the response
+
+```bash
+node scripts/timelog.mjs check-write --plan plan.json --date 2026-01-12 \
+  --expect-hash 64c830368fd8 --key PROJ-223
+# -> OK worklog 227701
+```
+
+This re-reads Jira and finds the row by `started` + `timeSpentSeconds`. It catches the nasty case:
+the call times out locally but Jira committed anyway. Retrying blind would double-log.
+
+### Two entries on one work item, same day
+
+Allowed only when each has its own explicit `@HH:MM` — otherwise it is indistinguishable from a
+repeated line:
+
+```
+PROJ-223 1h   @11:00 :: daily standup
+PROJ-223 2.5h @13:00 :: STC-BH data-bug investigation
+```
+
+### Several work items across several days
+
+```bash
+printf '%s\n' \
+  '2026-01-12\tPROJ-223 7.5h @09:00 :: parity engine checkpoint resume fix' \
+  '2026-01-13\tPROJ-223 4h   @09:00 :: pagination fix on 1.55M invitations' \
+  '2026-01-13\tPROJ-345 1h   @11:00 :: daily standup' \
+  | node scripts/timelog.mjs plan --manifest --out-dir ./plans
+```
+
+Ends with a scope table — one `--expect-hash` per day, and any day over the ceiling called out:
+
+```
+SCOPE: 2 days, 3 writes, plan files in ./plans
+  2026-01-12   1 entry  MEETS   --expect-hash 64c830368fd8
+  2026-01-13   2 entries MEETS  --expect-hash bf0e336821ea
+```
+
+### What a refusal looks like
+
+Refusals are instructions, never stack traces. Re-running a day you already wrote:
+
+```
+  PROJ-223  7.5h  @09:00  [DUPLICATE]
+...
+ABORT: DUPLICATE at write time (unchanged from plan time — an earlier plan/write
+for this day was never resolved) — refusing to write, stop this day and reconcile manually
+```
+
+A day heading somewhere implausible:
+
+```
+  STATUS: EXCEEDS - this day will hold 19.0h, over the 12.0h plausibility ceiling.
+  VERIFY before approving.
+```
+
+A comment that does not sound like the work item it is going on:
+
+```
+      comment: rewrote the marketing landing page copy
+      ?? this comment shares no wording with the issue "guided MSSQL->PG Migrator" -
+         is this the right issue?
+```
+
+That last one is a warning, not a block — you decide.
+
+---
+
 ## What it refuses to do
 
 - **Invent hours.** No gap arithmetic, no suggesting an issue to absorb a shortfall.
