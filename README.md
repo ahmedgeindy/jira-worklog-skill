@@ -389,6 +389,39 @@ That last one is a warning, not a block — you decide.
 - **The work week is configurable per site.** This skill assumes Sunday–Thursday; if yours is
   Monday–Friday, change it before your first run or it will fabricate and skip the wrong days.
 
+## Sharing this with your team
+
+This is distributed as a **private repo, not an npm package**, and that is a
+deliberate choice rather than an unfinished step.
+
+```bash
+git clone git@github.com:ahmedgeindy/jira-worklog-skill.git
+cd jira-worklog-skill
+npm run setup
+```
+
+Or in one line, for anyone who already has access to the repo:
+
+```bash
+npx github:ahmedgeindy/jira-worklog-skill
+```
+
+`package.json` carries `"private": true`, which makes `npm publish` refuse. Leave
+it there. Two reasons this is not on a public registry:
+
+1. **It names internal things.** The Jira site hostname appears in `SKILL.md`, the
+   references and three tests, and real issue keys appear throughout. None of that
+   is harmful to the team; all of it is needless disclosure outside it.
+2. **A test fixture used to carry a colleague's data.** It was a raw
+   `worklog query` capture with a real person's name, Jira accountId and timezone,
+   and their worklog comments — which named a customer and described that
+   customer's network incident. That is redacted now, but the original blob is
+   still in git history. A private repo makes that a non-issue; publishing would
+   not.
+
+If this ever should go public, both of the above need dealing with first, history
+included. Redacting only the tip is not enough.
+
 ## Layout
 
 ```
