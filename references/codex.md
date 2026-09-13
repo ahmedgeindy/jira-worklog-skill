@@ -32,18 +32,26 @@ in meaning.
 Do **not** carry over the sentence "`Bash(node *)` is allowlisted here with an empty ask/deny
 list." It is a fact about one `settings.local.json` and is false here. Three measured reasons:
 
-**1. A blanket rule already pre-approves every PowerShell command.**
-`~/.codex/rules/default.rules` line 255 is a two-element prefix:
+**1. A blanket rule may already pre-approve every PowerShell command.**
+Codex persists every "always allow" click into `~/.codex/rules/default.rules` as a `prefix_rule`,
+and matching is by **argv prefix** — so a short pattern is a blanket grant. On the machine this was
+written for, one such line read:
 
 ```
 prefix_rule(pattern=["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-Command"], decision="allow")
 ```
 
-It matches *any* `powershell.exe -Command <anything>`. One "always allow" click generalized into a
-standing allow. 78 of the 414 rules in that file are similarly broad.
+That matches *any* `powershell.exe -Command <anything>`: one click generalized into a standing
+allow. In that file, 78 of 414 rules were similarly broad.
 
-Deleting line 255 is hygiene, **not** a fix — the next such click regenerates one. This design
-therefore assumes the rules file is dirty and does not depend on it.
+**Check your own** — list the short patterns:
+
+```powershell
+Select-String 'prefix_rule' $env:USERPROFILE\.codex\rules\default.rules
+```
+
+Deleting the broad ones is hygiene, **not** a fix — the next "always allow" click regenerates one.
+This design therefore assumes the rules file is dirty and never depends on it being clean.
 
 **2. `on-request` is model-decided, not harness-enforced.**
 `codex --help` defines it as *"The model decides when to ask the user for approval."* An
@@ -64,7 +72,7 @@ outright. The enum is `on-request | never`.
 
 ## What still protects you here
 
-Under Codex the scripts run **unprompted** — line 255 sees to that. That is safe only because
+Under Codex the scripts run **unprompted** — a blanket PowerShell rule like the one above sees to that. That is safe only because
 `assertArgvSafe` refuses to spawn `worklog add`, so no script path can commit time no matter what
 invokes it. **That invariant carries more weight under Codex than under Claude Code, not less.**
 Never relax it, and never add an `apply` subcommand.
@@ -83,7 +91,7 @@ what it does not:
 
 `assertArgvSafe` governs what the **scripts** spawn. Nothing governs what the **model** types. A
 model that disregards "print the line and stop" can compose and run
-`twg … worklog add …` itself, and line 255 pre-approves it with no prompt. Under Claude Code that
+`twg … worklog add …` itself, and a blanket PowerShell rule pre-approves it with no prompt. Under Claude Code that
 same disobedience still hits a permission prompt; **under Codex it does not.**
 
 So: under Codex there is **no harness-enforced gate on a write.** The guards above make a bypass
@@ -104,7 +112,7 @@ Unable to connect. Is the computer able to access the url?
 ```
 
 **This message is misleading — it is not a network problem.** Measured from inside the same
-sandbox, with filesystem enforcement demonstrably active (`EPERM` writing to `C:\Users\AG-Dev\`):
+sandbox, with filesystem enforcement demonstrably active (`EPERM` writing to the user profile directory):
 
 ```
 $ codex sandbox -- node -e "fetch('https://istnetworks-dev.atlassian.net/status',{method:'HEAD'})..."
@@ -129,8 +137,9 @@ form first and record the result here.
 ## Prerequisite
 
 If `codex doctor` reports `✗ config could not be loaded`, Codex cannot execute anything — not this
-skill, not a sandbox probe. On this machine that was a zeroed `~/.codex/config.toml` (6597 NUL
-bytes) producing `TOML parse error at line 1, column 6598`. Fix it before running any of the above.
+skill, not a sandbox probe. One observed cause was a zeroed `~/.codex/config.toml` (NUL
+bytes) producing `TOML parse error at line 1, column <filesize+1>`; moving the file aside restored
+built-in defaults. Fix this before running any of the above.
 
 ## Unresolved
 

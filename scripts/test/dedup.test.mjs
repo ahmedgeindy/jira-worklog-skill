@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fingerprint, flattenAdf, classify, checkWindow } from '../lib/dedup.mjs'
 
-const ME = '712020:862ee292-a94d-488e-9f54-f5cb50dfd07b'
+const ME = '712020:00000000-1111-2222-3333-444444444444'
 const FP = fingerprint({ accountId: ME, key: 'HCFM-323', isoDate: '2026-09-08', seconds: 10800 })
 
 test('fingerprint is stable and excludes comment text', () => {

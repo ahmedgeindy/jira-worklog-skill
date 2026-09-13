@@ -4,9 +4,9 @@ import assert from 'node:assert/strict'
 import { resolveIdentity, assertAccountId } from '../lib/identity.mjs'
 
 const MYSELF = {
-  accountId: '712020:862ee292-a94d-488e-9f54-f5cb50dfd07b',
-  emailAddress: 'ahmed.genidy@istnetworks.com',
-  displayName: 'Ahmed Genidy',
+  accountId: '712020:00000000-1111-2222-3333-444444444444',
+  emailAddress: 'dev@example.com',
+  displayName: 'Example Dev',
   timeZone: 'Asia/Riyadh',
 }
 
