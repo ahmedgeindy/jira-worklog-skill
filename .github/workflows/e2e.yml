@@ -1,0 +1,117 @@
+name: End-to-end (Linux + macOS)
+
+# The Unix install path was code-reviewed against Atlassian's installer but had never
+# been executed: development happens on Windows. These runners are the only twg-less
+# Linux and macOS machines available, so this is where "npx … setup on a fresh
+# machine" stops being a claim.
+#
+# Deliberately NOT part of publish.yml. It downloads and runs the vendor installer on
+# every run, so a transient Atlassian outage would block a tag that has already passed
+# its tests and its package audit. Release gating stays in publish.yml.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'tools/**'
+      - 'package.json'
+      - '.github/workflows/e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false # a macOS-only path difference should not hide the Linux result
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Unit tests
+        # Also worth having per-OS: the suite has never run anywhere but Windows.
+        run: npm test
+
+      - name: twg must NOT be present yet
+        # The whole point of this job. If a runner image ever starts shipping twg,
+        # the auto-install step below would silently become a no-op and keep
+        # reporting success while testing nothing.
+        run: |
+          if command -v twg >/dev/null 2>&1; then
+            echo "::error::twg is already on PATH; this job can no longer prove the install path"
+            exit 1
+          fi
+          echo "twg absent, as required"
+
+      - name: Fresh-machine install (this is the teammate experience)
+        # Exactly what `npx <pkg> setup` does, against a throwaway HOME. There is no
+        # Jira session on a runner, so the run is EXPECTED to end with one failure --
+        # the sign-in check. Everything before and after it must still tick.
+        run: |
+          set -o pipefail
+          FAKE_HOME="$RUNNER_TEMP/fresh-home"
+          mkdir -p "$FAKE_HOME/.claude/skills"
+
+          set +e
+          HOME="$FAKE_HOME" node scripts/setup.mjs setup 2>&1 | tee "$RUNNER_TEMP/setup.log"
+          CODE=${PIPESTATUS[0]}
+          set -e
+          echo "--- setup exited $CODE ---"
+
+          fail=0
+          need() {
+            if grep -qF -- "$1" "$RUNNER_TEMP/setup.log"; then
+              echo "ok: $1"
+            else
+              echo "::error::expected output missing: $1"; fail=1
+            fi
+          }
+          need "twg not found — installing it from Atlassian"
+          need "teamwork-graph.atlassian.com/cli/install"
+          need "✓ twg"
+          need "(installed)"
+          need "✓ jira-worklog"
+          need "✓ verification"
+          need "✗ Jira sign-in"
+          need "twg login --force"
+
+          # Exactly one failed check, and it is the sign-in one.
+          CROSSES=$(grep -c '^[[:space:]]*✗ ' "$RUNNER_TEMP/setup.log" || true)
+          if [ "$CROSSES" != "1" ]; then
+            echo "::error::expected exactly 1 failed check, found $CROSSES"; fail=1
+          fi
+          if [ "$CODE" != "2" ]; then
+            echo "::error::expected exit 2 (sign-in missing), got $CODE"; fail=1
+          fi
+
+          # The binary really is where the installer documents, and it runs.
+          if [ ! -x "$FAKE_HOME/.local/bin/twg" ]; then
+            echo "::error::twg not found at \$HOME/.local/bin/twg"; fail=1
+          else
+            "$FAKE_HOME/.local/bin/twg" --version
+          fi
+          exit $fail
+
+      - name: Put the installed twg on PATH for the scenario matrix
+        run: echo "$RUNNER_TEMP/fresh-home/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Scenario matrix against the packed tarball
+        # --no-jira: no Jira session here, so "success" means every other check ticked
+        # and the ONLY failure is sign-in.
+        # --allow-twg-install: re-runs the installer once, isolated by
+        # INSTALL_DIR_OVERRIDE, to prove the path works with PATH stripped too.
+        run: node tools/e2e-setup.mjs --no-jira --allow-twg-install
+
+      - name: Package audit
+        run: |
+          node tools/audit-package.mjs --self-test
+          node tools/audit-package.mjs --public

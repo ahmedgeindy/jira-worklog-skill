@@ -43,9 +43,17 @@ const TWG_INSTALL_URL = IS_WINDOWS
 // Both add that directory to the USER PATH and then print "open a new terminal",
 // which this process cannot do. So after installing we look here directly rather
 // than asking a PATH that will not be refreshed until the next shell.
-const TWG_BIN_DIR = IS_WINDOWS
-  ? join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'Programs', 'twg', 'bin')
-  : join(homedir(), '.local', 'bin')
+//
+// INSTALL_DIR_OVERRIDE is the installer's own documented knob, and it is honoured
+// here for the same reason: if the installer was told to put twg somewhere else,
+// looking in the default location would report "not installed" about a working
+// install. It also makes this path testable on a machine that already has twg,
+// without touching the real one.
+const TWG_BIN_DIR = process.env.INSTALL_DIR_OVERRIDE
+  ? resolve(process.env.INSTALL_DIR_OVERRIDE)
+  : IS_WINDOWS
+    ? join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'Programs', 'twg', 'bin')
+    : join(homedir(), '.local', 'bin')
 const TWG_EXE = IS_WINDOWS ? 'twg.exe' : 'twg'
 
 const MANIFEST = '.jira-worklog-install.json'
@@ -182,13 +190,21 @@ function installTwg() {
       return { ok: false, why: `download failed (exit ${dl.status})`, out: dl.out }
     }
 
+    // If we are probing a non-default directory, the installer has to be told the
+    // same thing, or it installs to its default and we then declare a successful
+    // install missing. The shell installer reads INSTALL_DIR_OVERRIDE from the
+    // environment it inherits; PowerShell takes an explicit -InstallDir.
+    const override = process.env.INSTALL_DIR_OVERRIDE
+
     if (IS_WINDOWS) {
-      note('powershell -NoProfile -ExecutionPolicy Bypass -File <downloaded> -Yes -SkipLogin -SkipSkills')
-      flush()
-      const r = run('powershell.exe', [
+      const argv = [
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script,
         '-Yes', '-SkipLogin', '-SkipSkills',
-      ], { timeout: 900_000 })
+        ...(override ? ['-InstallDir', resolve(override)] : []),
+      ]
+      note(`powershell -NoProfile -ExecutionPolicy Bypass -File <downloaded> -Yes -SkipLogin -SkipSkills${override ? ' -InstallDir …' : ''}`)
+      flush()
+      const r = run('powershell.exe', argv, { timeout: 900_000 })
       return r.status === 0 ? { ok: true } : { ok: false, why: `installer exited ${r.status}`, out: r.out }
     }
 
