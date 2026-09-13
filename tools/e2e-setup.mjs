@@ -138,8 +138,12 @@ check('repeated setup is idempotent', runSetup(h1, ['setup', '--no-upgrade']), {
   includes: ['(current, reinstalled)', 'Ready.'],
 })
 
-// 4. twg already installed -> upgrade path is exercised, not the installer
-check('twg already installed', runSetup(freshHome('twgok'), ['setup']), {
+// 4. twg already present -> the installer must NOT run.
+// --no-upgrade deliberately: without it this scenario runs `twg upgrade` on the
+// machine of whoever ran the tests, so the day Atlassian ships a new version, running
+// the test suite would silently replace their binary. The assertions below prove what
+// this scenario is for -- that nothing gets installed -- without that side effect.
+check('twg already installed', runSetup(freshHome('twgok'), ['setup', '--no-upgrade']), {
   exit: 0,
   includes: ['✓ twg'],
   excludes: ['installing it from Atlassian', '(installed)'],
