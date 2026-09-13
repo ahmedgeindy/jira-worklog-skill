@@ -14,8 +14,22 @@ export function parseHours(text) {
     throw new Error(`d/w units are not supported (1d is 8h here, not 24h); use hours or minutes: ${text}`)
   }
 
-  const clock = /^(\d+):([0-5]\d)$/.exec(s)
-  if (clock) return Number(clock[1]) * 3600 + Number(clock[2]) * 60
+  // A colon COMMITS the string to the clock form. It must never fall through to
+  // the h/m scanner below: that scanner is a global match, so '7:30h' matched
+  // only its '30h' and returned 30 hours for a line a human wrote meaning 7h30m
+  // — exit 0, plausible number, four times the intended time. A trailing 'h' is
+  // accepted because '7:30h' is unambiguous to the person typing it; anything
+  // else after the clock is refused rather than guessed at.
+  if (s.includes(':')) {
+    const clock = /^(\d+):([0-5]\d)\s*h?$/.exec(s)
+    if (!clock) {
+      throw new Error(
+        `cannot parse hours from ${JSON.stringify(text)}: a ':' means the H:MM clock form ` +
+        "(e.g. '7:30' or '7:30h'), and minutes must be two digits under 60",
+      )
+    }
+    return Number(clock[1]) * 3600 + Number(clock[2]) * 60
+  }
 
   let seconds = 0
   let matched = false

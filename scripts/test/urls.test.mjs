@@ -153,3 +153,32 @@ test('more than one @HH:MM token on a line is refused rather than picking one', 
 test('a bare trailing @ with nothing after it is refused, not silently dropped', () => {
   assert.throws(() => parseLine('HCFM-323 3h @'), /invalid @HH:MM/i)
 })
+
+// --- A colon means the clock form and NOTHING else.
+// '7:30h' used to fall through to the h/m scanner, which matched '30h' and
+// returned 30 hours for a line a human wrote meaning 7h30m. Exit 0, plausible
+// number, four times the intended time. Found from a real prompt. ---
+
+test('7:30h is 7.5h, not 30h - a trailing unit must not defeat the clock form', () => {
+  assert.equal(parseHours('7:30h'), 27000)
+  assert.equal(parseHours('7:30 h'), 27000)
+  assert.equal(parseHours('07:30h'), 27000)
+})
+
+test('the plain clock form still works and agrees with every other spelling of 7.5h', () => {
+  const want = 27000
+  for (const s of ['7:30', '7.5h', '7h 30m', '450m', '7:30h']) {
+    assert.equal(parseHours(s), want, `${s} should be ${want}s`)
+  }
+})
+
+test('a colon with a nonsense unit is refused rather than guessed', () => {
+  assert.throws(() => parseHours('7:30m'), /cannot parse|clock/i)
+  assert.throws(() => parseHours('7:30x'), /cannot parse|clock/i)
+})
+
+test('an out-of-range clock value is still refused, with or without the trailing h', () => {
+  assert.throws(() => parseHours('7:60'), /cannot parse|clock/i)
+  assert.throws(() => parseHours('7:60h'), /cannot parse|clock/i)
+  assert.throws(() => parseHours('7:5h'), /cannot parse|clock/i)
+})
