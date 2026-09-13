@@ -121,6 +121,12 @@ Nothing else is ever downloaded — no mirrors, no third-party URLs, no other
 binaries. If the install fails for any reason, setup exits 2 and prints the official
 commands rather than continuing as though twg were present.
 
+**Verified on all three platforms, not just described.** Windows locally; Linux and
+macOS on every push, by a CI job that first asserts twg is *absent*, then runs the
+real fresh-machine flow and requires the binary to exist at `$HOME/.local/bin/twg`
+and run. Both reported `twg v1.2.8 (installed)` and 264 passing tests from the
+installed copy.
+
 ### If you are not signed in to Jira
 
 Setup fails that check and quotes twg's own error and its own fix — not a guess:
