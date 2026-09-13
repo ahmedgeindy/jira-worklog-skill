@@ -17,12 +17,12 @@ function deps({ dayTotalStatus = 'OK', existing = 0 } = {}) {
     checkWindow: () => [],
     bundle: () => ({
       perIssue: {
-        'HCFM-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Progress' }],
-        'HCFM-324': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Review' }],
+        'PROJ-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Progress' }],
+        'PROJ-324': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Review' }],
       },
       commentSource: 'EVIDENCED', bundleHash: 'bh',
     }),
-    resolveIssue: (key) => ({ key, numericId: '999', site: 'istnetworks-dev.atlassian.net' }),
+    resolveIssue: (key) => ({ key, numericId: '999', site: 'example.atlassian.net' }),
     now: () => Date.parse('2026-09-09T10:00:00+03:00'),
     // Ruling 1 (task-11 vs task-12 step 4): plan.mjs calls deps.readEstimate(p.key) and
     // records estimateBefore on every entry from the very first version of this file.
@@ -31,10 +31,10 @@ function deps({ dayTotalStatus = 'OK', existing = 0 } = {}) {
 }
 
 test('a plan freezes numericId, site, started, fingerprint and planHash', () => {
-  const p = runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 3h'], isoDate: '2026-09-08', deps: deps() })
   const e = p.days[0].entries[0]
   assert.equal(e.numericId, '999')
-  assert.equal(e.site, 'istnetworks-dev.atlassian.net')
+  assert.equal(e.site, 'example.atlassian.net')
   assert.equal(e.started, '2026-09-08T09:00:00.000+0300')
   assert.ok(e.fingerprint)
   assert.ok(p.planHash)
@@ -42,7 +42,7 @@ test('a plan freezes numericId, site, started, fingerprint and planHash', () => 
 
 test('an UNKNOWN day total aborts the plan - never treated as 0h', () => {
   assert.throws(
-    () => runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: deps({ dayTotalStatus: 'UNKNOWN' }) }),
+    () => runPlan({ lines: ['PROJ-323 3h'], isoDate: '2026-09-08', deps: deps({ dayTotalStatus: 'UNKNOWN' }) }),
     /UNKNOWN/,
   )
 })
@@ -50,19 +50,19 @@ test('an UNKNOWN day total aborts the plan - never treated as 0h', () => {
 test('a host that does not match the resolved site aborts', () => {
   const d = deps()
   assert.throws(
-    () => runPlan({ lines: ['https://someothercorp.atlassian.net/browse/HCFM-323 3h'], isoDate: '2026-09-08', deps: d }),
+    () => runPlan({ lines: ['https://someothercorp.atlassian.net/browse/PROJ-323 3h'], isoDate: '2026-09-08', deps: d }),
     /site/i,
   )
 })
 
 test('a SHORT day still produces a plan - it is written, then flagged', () => {
-  const p = runPlan({ lines: ['HCFM-323 2h'], isoDate: '2026-09-08', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps() })
   assert.equal(p.days[0].status, 'SHORT')
   assert.equal(p.days[0].entries.length, 1)
 })
 
 test('existing server time counts toward the floor', () => {
-  const p = runPlan({ lines: ['HCFM-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 5 * 3600 }) })
+  const p = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 5 * 3600 }) })
   assert.equal(p.days[0].status, 'MEETS')
 })
 
@@ -70,12 +70,12 @@ test('every entry carries a numeric estimateBefore', () => {
   // The pilot's "--adjust-estimate leave" check compares against this. If it is
   // undefined, checkWrite's `before > 0` is false and the estimate check SILENTLY
   // SKIPS - closing a risk with a check that cannot fire.
-  const p = runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 3h'], isoDate: '2026-09-08', deps: deps() })
   assert.equal(typeof p.days[0].entries[0].estimateBefore, 'number')
 })
 
 test('more than 5 days in one plan is refused', () => {
-  const lines = ['HCFM-323 7h']
+  const lines = ['PROJ-323 7h']
   const dates = ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-06', '2026-09-07', '2026-09-08']
   assert.throws(
     () => runPlan({ lines, isoDate: dates, deps: deps() }),
@@ -91,14 +91,14 @@ test('a comment built from a multi-field evidence fragment carries no semicolon'
   const d = deps()
   d.bundle = () => ({
     perIssue: {
-      'HCFM-323': [
+      'PROJ-323': [
         { source: 'jira-changelog', timestamp: 't1', fragment: 'status: In Progress; assignee: Jane Doe' },
         { source: 'jira-changelog', timestamp: 't2', fragment: 'status: Done' },
       ],
     },
     commentSource: 'EVIDENCED', bundleHash: 'bh',
   })
-  const p = runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: d })
+  const p = runPlan({ lines: ['PROJ-323 3h'], isoDate: '2026-09-08', deps: d })
   const comment = p.days[0].entries[0].comment
   assert.equal(comment.includes(';'), false)
   assert.ok(comment.includes('In Progress'))
@@ -108,7 +108,7 @@ test('a comment built from a multi-field evidence fragment carries no semicolon'
 // worklog comment. A gitignored local ledger is never read by a manager. ---
 
 test('a SHORT day writes the breach into every one of that day\'s comments', () => {
-  const p = runPlan({ lines: ['HCFM-323 2h', 'HCFM-324 3h'], isoDate: '2026-09-08', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 2h', 'PROJ-324 3h'], isoDate: '2026-09-08', deps: deps() })
   assert.equal(p.days[0].status, 'SHORT')
   for (const e of p.days[0].entries) {
     assert.match(e.comment, /at time of logging this day held 5\.0h, below the 7h policy floor/)
@@ -116,30 +116,30 @@ test('a SHORT day writes the breach into every one of that day\'s comments', () 
 })
 
 test('the breach states the WHOLE day, server time included, not just what is being written', () => {
-  const p = runPlan({ lines: ['HCFM-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 3 * 3600 }) })
+  const p = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 3 * 3600 }) })
   assert.equal(p.days[0].status, 'SHORT')
   assert.match(p.days[0].entries[0].comment, /this day held 5\.0h/)
 })
 
 test('the breach note never computes the gap or names an issue to fill it (D1a)', () => {
-  const p = runPlan({ lines: ['HCFM-323 2h'], isoDate: '2026-09-08', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps() })
   const c = p.days[0].entries[0].comment
   assert.match(c, /at time of logging this day held 2\.0h, below the 7h policy floor/)
   // The ONLY hour figures in the comment are the day total and the floor. The
   // difference between them - the fillable gap - is never computed anywhere.
   assert.deepEqual([...c.matchAll(/\d+(?:\.\d+)?h\b/g)].map((m) => m[0]), ['2.0h', '7h'])
   assert.equal(/short by|remaining|to add|gap/i.test(c), false)
-  assert.equal(c.includes('HCFM-345'), false)
+  assert.equal(c.includes('PROJ-345'), false)
 })
 
 test('a day that MEETS the floor carries no breach text', () => {
-  const p = runPlan({ lines: ['HCFM-323 7h'], isoDate: '2026-09-08', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 7h'], isoDate: '2026-09-08', deps: deps() })
   assert.equal(p.days[0].status, 'MEETS')
   assert.equal(/policy floor/i.test(p.days[0].entries[0].comment), false)
 })
 
 test('the breach text is emittable: no semicolon or other refused character', () => {
-  const p = runPlan({ lines: ['HCFM-323 2h'], isoDate: '2026-09-08', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps() })
   assert.equal(/["`$;&|<>\r\n]/.test(p.days[0].entries[0].comment), false)
 })
 
@@ -148,7 +148,7 @@ test('the breach text is emittable: no semicolon or other refused character', ()
 
 test('two identical input lines are refused at PLAN time', () => {
   assert.throws(
-    () => runPlan({ lines: ['HCFM-323 3h', 'HCFM-323 3h'], isoDate: '2026-09-08', deps: deps() }),
+    () => runPlan({ lines: ['PROJ-323 3h', 'PROJ-323 3h'], isoDate: '2026-09-08', deps: deps() }),
     /twice on 2026-09-08/i,
   )
 })
@@ -157,13 +157,13 @@ test('the same issue twice with DIFFERENT hours is refused too', () => {
   // Not a fingerprint collision, but the first write flips the second entry's
   // live dedupe state, so check-cmd would abort the day half-committed.
   assert.throws(
-    () => runPlan({ lines: ['HCFM-323 3h', 'HCFM-323 2h'], isoDate: '2026-09-08', deps: deps() }),
+    () => runPlan({ lines: ['PROJ-323 3h', 'PROJ-323 2h'], isoDate: '2026-09-08', deps: deps() }),
     /at most once per day/i,
   )
 })
 
 test('two DIFFERENT issues on one day are still fine', () => {
-  const p = runPlan({ lines: ['HCFM-323 3h', 'HCFM-324 4h'], isoDate: '2026-09-08', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 3h', 'PROJ-324 4h'], isoDate: '2026-09-08', deps: deps() })
   assert.equal(p.days[0].entries.length, 2)
   assert.equal(p.days[0].entries[0].fingerprint === p.days[0].entries[1].fingerprint, false)
 })
@@ -173,10 +173,10 @@ test('two DIFFERENT issues on one day are still fine', () => {
 test('a changelog fragment containing an ordinary ampersand produces a valid, renderable comment', () => {
   const d = deps()
   d.bundle = () => ({
-    perIssue: { 'HCFM-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'team: R&D' }] },
+    perIssue: { 'PROJ-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'team: R&D' }] },
     commentSource: 'EVIDENCED', bundleHash: 'bh',
   })
-  const p = runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: d })
+  const p = runPlan({ lines: ['PROJ-323 3h'], isoDate: '2026-09-08', deps: d })
   const e = p.days[0].entries[0]
   assert.equal(/["`$;&|<>\r\n]/.test(e.comment), false)
   assert.match(e.comment, /RandD/)
@@ -187,10 +187,10 @@ test('a changelog fragment containing an ordinary ampersand produces a valid, re
 test('changelog fragments with >, $ and | do not crash plan either', () => {
   const d = deps()
   d.bundle = () => ({
-    perIssue: { 'HCFM-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'summary: Q1 > Q2, budget $500, a|b' }] },
+    perIssue: { 'PROJ-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'summary: Q1 > Q2, budget $500, a|b' }] },
     commentSource: 'EVIDENCED', bundleHash: 'bh',
   })
-  const p = runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: d })
+  const p = runPlan({ lines: ['PROJ-323 3h'], isoDate: '2026-09-08', deps: d })
   const e = p.days[0].entries[0]
   assert.equal(/["`$;&|<>\r\n]/.test(e.comment), false)
   assert.doesNotThrow(() => renderPsCommand(buildAddArgv(e), BIN))
@@ -203,11 +203,11 @@ test('changelog fragments with >, $ and | do not crash plan either', () => {
 test('thin evidence (a cleared field) is still REJECTED on the EVIDENCED path - grounding is not weakened', () => {
   const d = deps()
   d.bundle = () => ({
-    perIssue: { 'HCFM-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status:' }] },
+    perIssue: { 'PROJ-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status:' }] },
     commentSource: 'EVIDENCED', bundleHash: 'bh',
   })
   assert.throws(
-    () => runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: d }),
+    () => runPlan({ lines: ['PROJ-323 3h'], isoDate: '2026-09-08', deps: d }),
     /comment rejected|not grounded/i,
   )
 })
@@ -215,11 +215,11 @@ test('thin evidence (a cleared field) is still REJECTED on the EVIDENCED path - 
 test('the SAME thin-evidence issue is loggable via a user-supplied :: comment, and grounding is skipped', () => {
   const d = deps()
   d.bundle = () => ({
-    perIssue: { 'HCFM-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status:' }] },
+    perIssue: { 'PROJ-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status:' }] },
     commentSource: 'EVIDENCED', bundleHash: 'bh',
   })
   const p = runPlan({
-    lines: ['HCFM-323 3h :: reviewed the migrator PR and fixed the parity check'],
+    lines: ['PROJ-323 3h :: reviewed the migrator PR and fixed the parity check'],
     isoDate: '2026-09-08', deps: d,
   })
   const e = p.days[0].entries[0]
@@ -228,13 +228,13 @@ test('the SAME thin-evidence issue is loggable via a user-supplied :: comment, a
 })
 
 test('an evidence-derived comment (no ::) is still labelled EVIDENCED', () => {
-  const p = runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 3h'], isoDate: '2026-09-08', deps: deps() })
   assert.equal(p.days[0].entries[0].commentSource, 'EVIDENCED')
 })
 
 test('a user comment that quotes nothing from the evidence is ACCEPTED - a human wrote it', () => {
   const p = runPlan({
-    lines: ['HCFM-323 3h :: paired with Sam on an unrelated hotfix'],
+    lines: ['PROJ-323 3h :: paired with Sam on an unrelated hotfix'],
     isoDate: '2026-09-08', deps: deps(),
   })
   const e = p.days[0].entries[0]
@@ -244,7 +244,7 @@ test('a user comment that quotes nothing from the evidence is ACCEPTED - a human
 
 test('the raw userComment field never survives into the persisted entry (it is not hashed)', () => {
   const p = runPlan({
-    lines: ['HCFM-323 3h :: reviewed the migrator PR and fixed the parity check'],
+    lines: ['PROJ-323 3h :: reviewed the migrator PR and fixed the parity check'],
     isoDate: '2026-09-08', deps: deps(),
   })
   assert.equal('userComment' in p.days[0].entries[0], false)
@@ -256,7 +256,7 @@ test('the raw userComment field never survives into the persisted entry (it is n
 
 test('REGRESSION: a USER_SUPPLIED comment on a SHORT day still carries the breach note', () => {
   const p = runPlan({
-    lines: ['HCFM-323 2h :: paired with Sam on an unrelated hotfix'],
+    lines: ['PROJ-323 2h :: paired with Sam on an unrelated hotfix'],
     isoDate: '2026-09-08', deps: deps(),
   })
   assert.equal(p.days[0].status, 'SHORT')
@@ -268,7 +268,7 @@ test('REGRESSION: a USER_SUPPLIED comment on a SHORT day still carries the breac
 
 test('a USER_SUPPLIED comment on a day that MEETS the floor does not carry the breach note', () => {
   const p = runPlan({
-    lines: ['HCFM-323 7h :: paired with Sam on an unrelated hotfix'],
+    lines: ['PROJ-323 7h :: paired with Sam on an unrelated hotfix'],
     isoDate: '2026-09-08', deps: deps(),
   })
   assert.equal(p.days[0].status, 'MEETS')
@@ -282,7 +282,7 @@ test('an EVIDENCED comment on a SHORT day still carries the breach note and stil
   // If the breach suffix broke validateComment's grounding/token checks, runPlan
   // would throw here instead of returning - so a returned plan IS the proof that
   // grounding still holds with the suffix appended.
-  const p = runPlan({ lines: ['HCFM-323 2h'], isoDate: '2026-09-08', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps() })
   assert.equal(p.days[0].status, 'SHORT')
   const e = p.days[0].entries[0]
   assert.equal(e.commentSource, 'EVIDENCED')
@@ -292,7 +292,7 @@ test('an EVIDENCED comment on a SHORT day still carries the breach note and stil
 
 test('the rendered PowerShell line for a SHORT-day USER_SUPPLIED entry is still emittable', () => {
   const p = runPlan({
-    lines: ['HCFM-323 2h :: paired with Sam on an unrelated hotfix'],
+    lines: ['PROJ-323 2h :: paired with Sam on an unrelated hotfix'],
     isoDate: '2026-09-08', deps: deps(),
   })
   const e = p.days[0].entries[0]
@@ -306,14 +306,14 @@ test('a SHORT day does not let the breach suffix rescue a user comment that sani
   // is pure shell-unsafe garbage is still refused - not silently replaced by a
   // comment consisting of nothing but the policy-floor sentence.
   assert.throws(
-    () => runPlan({ lines: ['HCFM-323 2h :: $$$'], isoDate: '2026-09-08', deps: deps() }),
+    () => runPlan({ lines: ['PROJ-323 2h :: $$$'], isoDate: '2026-09-08', deps: deps() }),
     /comment rejected.*empty after sanitization/i,
   )
 })
 
 test('a day flipping SHORT to MEETS changes planHash - the comment text is inside the hash', () => {
-  const shortPlan = runPlan({ lines: ['HCFM-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 0 }) })
-  const meetsPlan = runPlan({ lines: ['HCFM-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 5 * 3600 }) })
+  const shortPlan = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 0 }) })
+  const meetsPlan = runPlan({ lines: ['PROJ-323 2h'], isoDate: '2026-09-08', deps: deps({ existing: 5 * 3600 }) })
   assert.equal(shortPlan.days[0].status, 'SHORT')
   assert.equal(meetsPlan.days[0].status, 'MEETS')
   assert.notEqual(shortPlan.planHash, meetsPlan.planHash)
@@ -324,7 +324,7 @@ test('a day flipping SHORT to MEETS changes planHash - the comment text is insid
 // not just in a unit test of sequenceStarts against a hand-built entry. ---
 
 test('an @HH:MM on the input line pins started end-to-end through runPlan', () => {
-  const p = runPlan({ lines: ['HCFM-323 1h @11:00 :: daily standup'], isoDate: '2026-09-08', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 1h @11:00 :: daily standup'], isoDate: '2026-09-08', deps: deps() })
   const e = p.days[0].entries[0]
   assert.equal(e.started, '2026-09-08T11:00:00.000+0300')
   assert.equal(e.startAt, '11:00')
@@ -334,13 +334,13 @@ test('an @HH:MM on the input line pins started end-to-end through runPlan', () =
 test('a future @HH:MM on the CURRENT day is refused, same as any other future start', () => {
   // deps().now() is fixed at 2026-09-09T10:00:00+03:00.
   assert.throws(
-    () => runPlan({ lines: ['HCFM-323 1h @11:00'], isoDate: '2026-09-09', deps: deps() }),
+    () => runPlan({ lines: ['PROJ-323 1h @11:00'], isoDate: '2026-09-09', deps: deps() }),
     /future/i,
   )
 })
 
 test('a past @HH:MM on the current day (before "now") is accepted', () => {
-  const p = runPlan({ lines: ['HCFM-323 1h @09:00'], isoDate: '2026-09-09', deps: deps() })
+  const p = runPlan({ lines: ['PROJ-323 1h @09:00'], isoDate: '2026-09-09', deps: deps() })
   assert.equal(p.days[0].entries[0].started, '2026-09-09T09:00:00.000+0300')
 })
 
@@ -348,14 +348,14 @@ test('a past @HH:MM on the current day (before "now") is accepted', () => {
 
 test('case 1: same issue twice, NEITHER with @HH:MM, is refused (today\'s original message, unchanged)', () => {
   assert.throws(
-    () => runPlan({ lines: ['HCFM-323 3h', 'HCFM-323 2h'], isoDate: '2026-09-08', deps: deps() }),
+    () => runPlan({ lines: ['PROJ-323 3h', 'PROJ-323 2h'], isoDate: '2026-09-08', deps: deps() }),
     /at most once per day/i,
   )
 })
 
 test('case 2: same issue twice, BOTH with DIFFERENT @HH:MM, is ALLOWED', () => {
   const p = runPlan({
-    lines: ['HCFM-323 1h @11:00 :: daily standup', 'HCFM-323 2.5h @13:00 :: partner sync'],
+    lines: ['PROJ-323 1h @11:00 :: daily standup', 'PROJ-323 2.5h @13:00 :: partner sync'],
     isoDate: '2026-09-08', deps: deps(),
   })
   assert.equal(p.days[0].entries.length, 2)
@@ -367,7 +367,7 @@ test('case 2: same issue twice, BOTH with DIFFERENT @HH:MM, is ALLOWED', () => {
 test('case 3: same issue twice, BOTH with the SAME @HH:MM, is refused as a genuine collision', () => {
   assert.throws(
     () => runPlan({
-      lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-323 2h @11:00 :: something else'],
+      lines: ['PROJ-323 1h @11:00 :: standup', 'PROJ-323 2h @11:00 :: something else'],
       isoDate: '2026-09-08', deps: deps(),
     }),
     /identical start time|same instant/i,
@@ -377,7 +377,7 @@ test('case 3: same issue twice, BOTH with the SAME @HH:MM, is refused as a genui
 test('case 4: same issue twice, ONE with @HH:MM and one WITHOUT, is refused', () => {
   assert.throws(
     () => runPlan({
-      lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-323 2h :: something else'],
+      lines: ['PROJ-323 1h @11:00 :: standup', 'PROJ-323 2h :: something else'],
       isoDate: '2026-09-08', deps: deps(),
     }),
     /sequencer|pins @11:00/i,
@@ -387,7 +387,7 @@ test('case 4: same issue twice, ONE with @HH:MM and one WITHOUT, is refused', ()
 test('case 4 is refused regardless of which line (pinned or implicit) comes first', () => {
   assert.throws(
     () => runPlan({
-      lines: ['HCFM-323 2h :: something else', 'HCFM-323 1h @11:00 :: standup'],
+      lines: ['PROJ-323 2h :: something else', 'PROJ-323 1h @11:00 :: standup'],
       isoDate: '2026-09-08', deps: deps(),
     }),
     /sequencer|pins @11:00/i,
@@ -396,7 +396,7 @@ test('case 4 is refused regardless of which line (pinned or implicit) comes firs
 
 test('two DIFFERENT issues, each with the same @HH:MM as each other, is fine (the guard is per-issue)', () => {
   const p = runPlan({
-    lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-324 1h @11:00 :: standup'],
+    lines: ['PROJ-323 1h @11:00 :: standup', 'PROJ-324 1h @11:00 :: standup'],
     isoDate: '2026-09-08', deps: deps(),
   })
   assert.equal(p.days[0].entries.length, 2)
@@ -409,7 +409,7 @@ test('two DIFFERENT issues, each with the same @HH:MM as each other, is fine (th
 
 test('two case-2-allowed entries with the SAME duration but different @HH:MM are ACCEPTED and get distinct fingerprints', () => {
   const p = runPlan({
-    lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-323 1h @13:00 :: something else'],
+    lines: ['PROJ-323 1h @11:00 :: standup', 'PROJ-323 1h @13:00 :: something else'],
     isoDate: '2026-09-08', deps: deps(),
   })
   assert.equal(p.days[0].entries.length, 2)
@@ -419,16 +419,16 @@ test('two case-2-allowed entries with the SAME duration but different @HH:MM are
 test('the genuine duplicate - same duration AND same start time - is still refused at plan time', () => {
   assert.throws(
     () => runPlan({
-      lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-323 1h @11:00 :: standup again'],
+      lines: ['PROJ-323 1h @11:00 :: standup', 'PROJ-323 1h @11:00 :: standup again'],
       isoDate: '2026-09-08', deps: deps(),
     }),
-    /one dedup fingerprint|refusing HCFM-323 twice/i,
+    /one dedup fingerprint|refusing PROJ-323 twice/i,
   )
 })
 
 test('control: two case-2-allowed entries with DIFFERENT durations are fine (no fingerprint collision)', () => {
   const p = runPlan({
-    lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-323 2.5h @13:00 :: something else'],
+    lines: ['PROJ-323 1h @11:00 :: standup', 'PROJ-323 2.5h @13:00 :: something else'],
     isoDate: '2026-09-08', deps: deps(),
   })
   assert.equal(p.days[0].entries.length, 2)
@@ -446,8 +446,8 @@ test('two allowed entries for the same key pass ONE deduped key into dayTotal.ex
     return realDayTotal(args)
   }
   runPlan({
-    lines: ['HCFM-323 1h @11:00 :: standup', 'HCFM-323 2.5h @13:00 :: something else'],
+    lines: ['PROJ-323 1h @11:00 :: standup', 'PROJ-323 2.5h @13:00 :: something else'],
     isoDate: '2026-09-08', deps: d,
   })
-  assert.deepEqual(seenExtraKeys, ['HCFM-323'])
+  assert.deepEqual(seenExtraKeys, ['PROJ-323'])
 })

@@ -63,7 +63,7 @@ function extractKey(token) {
     query = decodeURIComponent(u.search)
   }
 
-  // PATH wins. A poisoned '?jql=key=HCFM-999' must never beat '/browse/HCFM-323'.
+  // PATH wins. A poisoned '?jql=key=PROJ-999' must never beat '/browse/PROJ-323'.
   const fromPath = KEY_RE.exec(path)
   if (fromPath) return { host, key: fromPath[1].toUpperCase() }
 
@@ -75,7 +75,7 @@ function extractKey(token) {
 
 // ' :: ' (space colon colon space) introduces an optional user-supplied
 // comment (task-14 Fix B). The hours token still sits between the key and the
-// separator: 'HCFM-323 3h :: reviewed the migrator PR and fixed the parity check'.
+// separator: 'PROJ-323 3h :: reviewed the migrator PR and fixed the parity check'.
 //
 // Searched for on the RAW (not fully-trimmed) line deliberately: trimming the
 // whole line first would eat a trailing ' :: ' with nothing after it, so a
@@ -84,7 +84,7 @@ function extractKey(token) {
 const COMMENT_SEP = ' :: '
 
 // Optional explicit start time: an '@HH:MM' token sitting after the hours and
-// before any ' :: ' comment ('HCFM-345 1h @11:00 :: daily standup'). Matched
+// before any ' :: ' comment ('PROJ-345 1h @11:00 :: daily standup'). Matched
 // against the WHOLE remainder (not split into whitespace tokens first) so a
 // glued form with no separating space - '1h@11:00' - still gets caught here
 // rather than reaching parseHours, whose `(h|m)` word-boundary match would
@@ -95,7 +95,7 @@ const START_AT_RE = /@(\S+)/g
 // rather than accepted and silently mis-filed a day late downstream.
 const START_AT_SHAPE_RE = /^([01]\d|2[0-3]):([0-5]\d)$/
 
-/** 'https://.../browse/HCFM-323 2h' -> {host, key, seconds, hoursSource, startAt, comment} */
+/** 'https://.../browse/PROJ-323 2h' -> {host, key, seconds, hoursSource, startAt, comment} */
 export function parseLine(line) {
   const raw = String(line ?? '')
   if (!raw.trim()) throw new Error('cannot parse an empty line')

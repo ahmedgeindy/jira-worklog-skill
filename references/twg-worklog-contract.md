@@ -1,7 +1,7 @@
 # The frozen twg worklog contract
 
 Every item below was established by a live read-only probe against
-`istnetworks-dev.atlassian.net` on 2026-09-09/10, and each quotes the command that proved it so a
+`example.atlassian.net` on 2026-09-09/10, and each quotes the command that proved it so a
 future maintainer can **re-verify rather than trust**. `scripts/preflight.mjs` re-asserts the five
 mandatory flags at runtime; if it stops the run, start here.
 
@@ -39,7 +39,7 @@ onto today with exit 0 on every call. The read-observed format is the only known
 > `worklog query --issue-id K2227759-141` → `timeSpent "1d 10m"` with
 > `timeSpentSeconds 29400`. 29400 − 600 = 28800 = 8h.
 >
-> `twg api "jira:/rest/api/3/issue/HCFM-276?fields=timetracking"` →
+> `twg api "jira:/rest/api/3/issue/PROJ-276?fields=timetracking"` →
 > `originalEstimate "3d"`, `originalEstimateSeconds 86400` ⇒ 28800/day.
 > **86400 also equals 24h — a deceptive coincidence.**
 
@@ -159,7 +159,7 @@ Jira acceptance is not a correctness signal — resolved/Done issues accept work
 
 twg resolves the cloud ID from the **host** in a pasted URL, so the host is worth asserting:
 
-> `workitem get "https://someothercorp.atlassian.net/browse/HCFM-345"` → exit 1,
+> `workitem get "https://someothercorp.atlassian.net/browse/PROJ-345"` → exit 1,
 > `Failed to resolve cloud ID for site … 404`.
 
 ## 12. Shell and output
@@ -183,7 +183,7 @@ Build argv **arrays** and spawn with `shell: false`. There is no `--dry-run`, `-
 - Which `--started` formats Jira accepts. Only the read-observed form is known-good; `+03:00` with
   a colon, `Z`, a missing `.SSS`, and an omitted offset are all untested.
 - Whether `--site` is honoured on a write, and what happens when both time flags are sent.
-- Whether an issue with `timetracking: {}` and zero worklogs ever (e.g. `HCFM-345`) can accept a
+- Whether an issue with `timetracking: {}` and zero worklogs ever (e.g. `PROJ-345`) can accept a
   worklog at all. Zero-history issues are ordered **first** within a day to surface this early.
 - JQL search-index lag. Pasted keys bypass JQL for dedup (live REST), but day-total *discovery* is
   JQL (`meta.backend: agg`), so a worklog entered in the Jira UI minutes earlier can be missed.

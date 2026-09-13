@@ -49,7 +49,7 @@ test('a truncated page aborts as UNKNOWN instead of undercounting', () => {
   const deps = {
     run: (argv) => {
       if (argv.includes('query') && argv.includes('--jql')) {
-        return { exit: 0, data: { issues: [{ key: 'HCFM-1' }] }, failures: [], meta: null }
+        return { exit: 0, data: { issues: [{ key: 'PROJ-1' }] }, failures: [], meta: null }
       }
       return {
         exit: 0, failures: [], request: null,
@@ -66,7 +66,7 @@ test('a truncated page aborts as UNKNOWN instead of undercounting', () => {
 test('JQL finding issues while the filtered sum is 0 is UNKNOWN, not 0h', () => {
   const deps = {
     run: (argv) => {
-      if (argv.includes('--jql')) return { exit: 0, data: { issues: [{ key: 'HCFM-1' }] }, failures: [], meta: null }
+      if (argv.includes('--jql')) return { exit: 0, data: { issues: [{ key: 'PROJ-1' }] }, failures: [], meta: null }
       return {
         exit: 0, failures: [], request: null,
         data: [{ id: '1', author: { accountId: 'not-me' }, timeSpentSeconds: 3600 }],
@@ -94,8 +94,8 @@ test('extraKeys are unioned into the candidate set to blunt JQL index lag', () =
       return { exit: 0, data: [], failures: [], meta: { pagination: { total: 0 } }, request: null }
     },
   }
-  dayTotal({ zone: 'Asia/Riyadh', accountId: ME, isoDate: '2026-09-08', extraKeys: ['HCFM-345'], deps })
-  assert.deepEqual(seen, ['HCFM-345'])
+  dayTotal({ zone: 'Asia/Riyadh', accountId: ME, isoDate: '2026-09-08', extraKeys: ['PROJ-345'], deps })
+  assert.deepEqual(seen, ['PROJ-345'])
 })
 
 // --- I3: consecutive backfill. The wide discovery window [D-1, D+2) is right
@@ -115,7 +115,7 @@ test('the day AFTER a logged day reads as a clean 0h, not a false UNKNOWN', () =
         // Wide discovery reaches back to 2026-09-07 and finds yesterday's issue.
         // The narrow control, exactly [2026-09-08, 2026-09-09), finds nothing.
         const isWide = jql.includes('>= "2026-09-07"')
-        return { exit: 0, data: { issues: isWide ? [{ key: 'HCFM-1' }] : [] }, failures: [], meta: null }
+        return { exit: 0, data: { issues: isWide ? [{ key: 'PROJ-1' }] : [] }, failures: [], meta: null }
       }
       // The day-windowed per-issue read correctly returns nothing for today.
       return { exit: 0, data: [], failures: [], request: null, meta: { pagination: { total: 0 } } }
@@ -127,7 +127,7 @@ test('the day AFTER a logged day reads as a clean 0h, not a false UNKNOWN', () =
   assert.equal(jqls.length, 2, 'discovery and control are two distinct queries')
   assert.equal(jqls.some((q) => q.includes('>= "2026-09-08"') && q.includes('< "2026-09-09"')), true)
   // The wide query still drives candidate discovery, so yesterday's issue is read.
-  assert.deepEqual(r.candidates, ['HCFM-1'])
+  assert.deepEqual(r.candidates, ['PROJ-1'])
 })
 
 test('the control still fires when MY OWN day really cannot be read', () => {
@@ -135,7 +135,7 @@ test('the control still fires when MY OWN day really cannot be read', () => {
   // and the author-filtered sum is still 0. That is a broken read, not a clean day.
   const deps = {
     run: (argv) => {
-      if (argv.includes('--jql')) return { exit: 0, data: { issues: [{ key: 'HCFM-1' }] }, failures: [], meta: null }
+      if (argv.includes('--jql')) return { exit: 0, data: { issues: [{ key: 'PROJ-1' }] }, failures: [], meta: null }
       return {
         exit: 0, failures: [], request: null,
         data: [{ id: '1', author: { accountId: 'not-me' }, timeSpentSeconds: 3600 }],
@@ -162,7 +162,7 @@ test('a top-level pageInfo.nextCursor is followed, and page 2 is counted', () =>
   const afters = []
   const deps = {
     run: (argv) => {
-      if (argv.includes('--jql')) return { exit: 0, data: { issues: [{ key: 'HCFM-1' }] }, failures: [], meta: null }
+      if (argv.includes('--jql')) return { exit: 0, data: { issues: [{ key: 'PROJ-1' }] }, failures: [], meta: null }
       const i = argv.indexOf('--after')
       afters.push(i === -1 ? null : argv[i + 1])
       // Shaped by the SAME envelope function run() uses, so this exercises the
@@ -192,9 +192,9 @@ test('a key named only by the narrow control still gets read - no silent underco
       if (i !== -1) {
         const jql = argv[i + 1]
         const isWide = jql.includes('>= "2026-09-07"')
-        // Wide discovery finds only HCFM-1; the narrow control also names
-        // HCFM-2, which the wide query missed (truncation / index lag).
-        const issues = isWide ? [{ key: 'HCFM-1' }] : [{ key: 'HCFM-1' }, { key: 'HCFM-2' }]
+        // Wide discovery finds only PROJ-1; the narrow control also names
+        // PROJ-2, which the wide query missed (truncation / index lag).
+        const issues = isWide ? [{ key: 'PROJ-1' }] : [{ key: 'PROJ-1' }, { key: 'PROJ-2' }]
         return { exit: 0, data: { issues }, failures: [], meta: null }
       }
       const key = argv[argv.indexOf('--issue-id') + 1]
@@ -208,9 +208,9 @@ test('a key named only by the narrow control still gets read - no silent underco
   }
   const r = dayTotal({ zone: 'Asia/Riyadh', accountId: ME, isoDate: '2026-09-08', deps })
   assert.equal(r.status, 'OK')
-  assert.equal(r.seconds, 7200, 'HCFM-2, named only by the narrow control, must be counted too')
-  assert.ok(readKeys.includes('HCFM-2'), 'HCFM-2 must actually be read, not just present in candidates')
-  assert.deepEqual(new Set(r.candidates), new Set(['HCFM-1', 'HCFM-2']))
+  assert.equal(r.seconds, 7200, 'PROJ-2, named only by the narrow control, must be counted too')
+  assert.ok(readKeys.includes('PROJ-2'), 'PROJ-2 must actually be read, not just present in candidates')
+  assert.deepEqual(new Set(r.candidates), new Set(['PROJ-1', 'PROJ-2']))
 })
 
 test('a cursor that never advances aborts instead of re-reading page 1 forever', () => {
@@ -218,7 +218,7 @@ test('a cursor that never advances aborts instead of re-reading page 1 forever',
   let calls = 0
   const deps = {
     run: (argv) => {
-      if (argv.includes('--jql')) return { exit: 0, data: { issues: [{ key: 'HCFM-1' }] }, failures: [], meta: null }
+      if (argv.includes('--jql')) return { exit: 0, data: { issues: [{ key: 'PROJ-1' }] }, failures: [], meta: null }
       calls += 1
       return { ...toEnvelope(page1), exit: 0 } // always the same cursor
     },

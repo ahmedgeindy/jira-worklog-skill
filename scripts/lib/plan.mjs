@@ -238,7 +238,7 @@ export function hashPlan(plan) {
  * logged against?
  *
  * Motivation, from a real run: 31 days were logged to an issue titled
- * "Development - guided MSSQL->PG Migrator", and several of the comments
+ * "Development - data import tool", and several of the comments
  * described Superset RLS debugging, a DESIGN.md rewrite, and pgAdmin
  * hardening. Every guard passed - the hours were the user's, the comments were
  * their own words, dedup was clean - because nothing ever compared the comment

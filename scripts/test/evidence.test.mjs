@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { redact, changelogEvidence } from '../lib/evidence.mjs'
 
 test('a line naming a password is DROPPED, not masked', () => {
-  assert.equal(redact('Postgres pwd (hivecfm_admin) exposed; rotation req\'d'), null)
+  assert.equal(redact('Postgres pwd (app_admin) exposed; rotation req\'d'), null)
   assert.equal(redact('set PASSWORD=hunter2'), null)
   assert.equal(redact('token: abc123'), null)
   assert.equal(redact('PAT embedded in clone url'), null)
@@ -37,7 +37,7 @@ test('changelog evidence keeps only MY entries on the target day', () => {
       },
     }),
   }
-  const ev = changelogEvidence({ key: 'HCFM-323', isoDate: '2026-09-08', accountId: ME, zone: 'Asia/Riyadh', deps })
+  const ev = changelogEvidence({ key: 'PROJ-323', isoDate: '2026-09-08', accountId: ME, zone: 'Asia/Riyadh', deps })
   assert.equal(ev.length, 1)
   assert.match(ev[0].fragment, /In Progress/)
   assert.equal(ev[0].source, 'jira-changelog')

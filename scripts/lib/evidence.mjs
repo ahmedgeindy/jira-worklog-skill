@@ -22,7 +22,7 @@ export function redact(line) {
 /**
  * The ONLY source that carries author + timestamp + what-changed together.
  * `status` from `workitem get` is a STATE, not an event, and narrating it as a
- * transition is fabrication (4 of HCFM-323's 6 entries belong to someone else).
+ * transition is fabrication (4 of PROJ-323's 6 entries belong to someone else).
  * GET-only against a hardcoded path (decision D2).
  */
 export function changelogEvidence({ key, isoDate, accountId, zone, deps = {} }) {

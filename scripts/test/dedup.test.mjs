@@ -4,13 +4,13 @@ import assert from 'node:assert/strict'
 import { fingerprint, flattenAdf, classify, checkWindow } from '../lib/dedup.mjs'
 
 const ME = '712020:00000000-1111-2222-3333-444444444444'
-const FP = fingerprint({ accountId: ME, key: 'HCFM-323', isoDate: '2026-09-08', seconds: 10800 })
+const FP = fingerprint({ accountId: ME, key: 'PROJ-323', isoDate: '2026-09-08', seconds: 10800 })
 
 test('fingerprint is stable and excludes comment text', () => {
-  const a = fingerprint({ accountId: ME, key: 'HCFM-323', isoDate: '2026-09-08', seconds: 10800 })
-  const b = fingerprint({ accountId: ME, key: 'HCFM-323', isoDate: '2026-09-08', seconds: 10800 })
+  const a = fingerprint({ accountId: ME, key: 'PROJ-323', isoDate: '2026-09-08', seconds: 10800 })
+  const b = fingerprint({ accountId: ME, key: 'PROJ-323', isoDate: '2026-09-08', seconds: 10800 })
   assert.equal(a, b)
-  assert.notEqual(a, fingerprint({ accountId: ME, key: 'HCFM-323', isoDate: '2026-09-08', seconds: 7200 }))
+  assert.notEqual(a, fingerprint({ accountId: ME, key: 'PROJ-323', isoDate: '2026-09-08', seconds: 7200 }))
 })
 
 test('flattenAdf tree-walks for text nodes - a substring test on the object would fail', () => {
@@ -70,7 +70,7 @@ test('a row with no author accountId is AMBIGUOUS, not CLEAR', () => {
 // lifetime worklogs returned total 1 for a one-day window), so the comparison is
 // sound and cannot misfire. ---
 
-const WINDOW_ARGS = { key: 'HCFM-323', accountId: ME, zone: 'Asia/Riyadh', isoDate: '2026-09-08' }
+const WINDOW_ARGS = { key: 'PROJ-323', accountId: ME, zone: 'Asia/Riyadh', isoDate: '2026-09-08' }
 
 function fakeRun(res) {
   return (argv) => {

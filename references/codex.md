@@ -115,7 +115,7 @@ Unable to connect. Is the computer able to access the url?
 sandbox, with filesystem enforcement demonstrably active (`EPERM` writing to the user profile directory):
 
 ```
-$ codex sandbox -- node -e "fetch('https://istnetworks-dev.atlassian.net/status',{method:'HEAD'})..."
+$ codex sandbox -- node -e "fetch('https://example.atlassian.net/status',{method:'HEAD'})..."
 NET_OK 200
 ```
 

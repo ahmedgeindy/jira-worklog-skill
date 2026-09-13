@@ -1,23 +1,26 @@
 #!/usr/bin/env node
-// One command that takes a fresh machine to a working, verified install.
+// One command that takes a fresh machine to a working, verified install:
 //
-//   npx <package> setup
+//   npx <package>@latest setup
 //
-// Six checks, each of which can only pass by actually being true. It refuses rather
-// than improvising, and it never writes to Jira.
+// Seven checks. Each can only print a tick by actually being true, and the run exits
+// non-zero if any of them cannot. It never writes to Jira.
 //
-// What it will NOT do unless you explicitly ask:
-//   - install twg. Missing twg prints Atlassian's own documented commands and exits 2.
-//     `--install-twg` runs the vendor installer, and prints the exact command first.
-//     Choosing a URL to fetch a binary from is a supply-chain decision; it stays yours.
-//   - overwrite a skill directory it did not install (see --force).
+// On twg: if twg is missing this installs it, using Atlassian's own installer from
+// their own pinned domain -- the same script their docs tell you to run by hand. It
+// is fetched over HTTPS, the exact command is printed before it runs, and
+// `--no-install-twg` opts out. This is a deliberate change from an earlier version
+// that refused to install anything: a teammate should not need to know a flag to get
+// a working machine. What has NOT changed is that no other binary, mirror, or
+// third-party URL is ever fetched, and that a failed install is reported as a failure
+// with the official instructions rather than papered over.
 
 import { execFileSync } from 'node:child_process'
 import {
-  existsSync, readFileSync, readdirSync, mkdirSync, rmSync, rmdirSync, cpSync, symlinkSync,
-  lstatSync,
+  existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, mkdtempSync,
+  rmSync, rmdirSync, cpSync, symlinkSync, lstatSync,
 } from 'node:fs'
-import { homedir, platform } from 'node:os'
+import { homedir, platform, tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -26,13 +29,26 @@ import { describeTwgFailure } from './lib/twgstatus.mjs'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const IS_WINDOWS = platform() === 'win32'
 
-// Verified against Atlassian's own docs, 2026-09-13. An earlier version of this file
-// shipped a developer.atlassian.com URL that 404s -- it was never checked.
+// Verified against Atlassian's published docs, 2026-09-13, and both installer scripts
+// were read before being wired in as the default path. An earlier version of this
+// file shipped a developer.atlassian.com URL that 404s; it had never been checked.
 const TWG_DOCS = 'https://developer.atlassian.com/platform/teamwork-graph/twg-cli/getting-started/installation/'
-const TWG_INSTALL = IS_WINDOWS
-  ? ['curl.exe -fsSL https://teamwork-graph.atlassian.com/cli/install.ps1 -o twg-install.ps1',
-     'powershell -ExecutionPolicy Bypass -File .\\twg-install.ps1']
-  : ['curl -fsSL --retry 2 https://teamwork-graph.atlassian.com/cli/install | bash']
+const TWG_INSTALL_URL = IS_WINDOWS
+  ? 'https://teamwork-graph.atlassian.com/cli/install.ps1'
+  : 'https://teamwork-graph.atlassian.com/cli/install'
+
+// Where each installer puts the binary, read out of the installers themselves:
+//   install.ps1 -> Join-Path $env:LOCALAPPDATA "Programs\twg\bin"
+//   install.sh  -> "${INSTALL_DIR_OVERRIDE:-${HOME}/.local/bin}"
+// Both add that directory to the USER PATH and then print "open a new terminal",
+// which this process cannot do. So after installing we look here directly rather
+// than asking a PATH that will not be refreshed until the next shell.
+const TWG_BIN_DIR = IS_WINDOWS
+  ? join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'Programs', 'twg', 'bin')
+  : join(homedir(), '.local', 'bin')
+const TWG_EXE = IS_WINDOWS ? 'twg.exe' : 'twg'
+
+const MANIFEST = '.jira-worklog-install.json'
 
 const args = process.argv.slice(2)
 const flags = new Set(args.filter((a) => a.startsWith('-')))
@@ -42,18 +58,18 @@ const OPT = {
   link: flags.has('--link'),
   force: flags.has('--force'),
   noUpgrade: flags.has('--no-upgrade'),
-  installTwg: flags.has('--install-twg'),
+  noInstallTwg: flags.has('--no-install-twg'),
   verbose: flags.has('--verbose'),
 }
 
 function usage(message) {
   if (message) console.log(`${message}\n`)
-  console.log('Usage:  npx <package> setup [options]\n')
-  console.log('  --install-twg   install twg with Atlassian\'s documented installer if missing')
-  console.log('  --no-upgrade    do not run `twg upgrade`')
-  console.log('  --link          symlink/junction instead of copying (repo clones only)')
-  console.log('  --force         replace a target directory that is not this skill')
-  console.log('  --verbose       show every command\'s output')
+  console.log('Usage:  npx <package>@latest setup [options]\n')
+  console.log('  --no-install-twg   do not install twg if it is missing')
+  console.log('  --no-upgrade       do not run `twg upgrade`')
+  console.log('  --link             symlink/junction instead of copying (repo clones only)')
+  console.log('  --force            replace a target directory that is not this skill')
+  console.log('  --verbose          show each command\'s output')
   process.exit(message ? 2 : 0)
 }
 
@@ -65,27 +81,18 @@ if (words[0] !== 'setup' || words.length > 1) usage(`Unknown subcommand: ${words
 
 let failed = false
 const lines = []
-const pass = (label, detail) => lines.push(`  ✓ ${label}${detail ? `  ${detail}` : ''}`)
-const skip = (label, detail) => lines.push(`  - ${label}${detail ? `  ${detail}` : ''}`)
-const fail = (label, detail) => {
-  failed = true
-  lines.push(`  ✗ ${label}${detail ? `  ${detail}` : ''}`)
-}
-const note = (text) => lines.push(`      ${text}`)
-const flush = () => {
-  console.log(lines.join('\n'))
-  lines.length = 0
-}
+const pass = (l, d) => lines.push(`  ✓ ${l}${d ? `  ${d}` : ''}`)
+const skip = (l, d) => lines.push(`  - ${l}${d ? `  ${d}` : ''}`)
+const fail = (l, d) => { failed = true; lines.push(`  ✗ ${l}${d ? `  ${d}` : ''}`) }
+const note = (t) => lines.push(`      ${t}`)
+const flush = () => { console.log(lines.join('\n')); lines.length = 0 }
 
 console.log('')
 
-// Running npm is awkward to do safely on Windows. `npm` is a .cmd shim, and since
-// the CVE-2024-27980 fix Node refuses to execFile a .cmd at all without a shell --
-// but with a shell, arguments are concatenated instead of escaped (DEP0190), so a
-// temp path containing a space would be re-split by cmd.exe.
-//
-// Both problems disappear by running npm's own JS entry point with the node binary
-// we are already inside: no shim, no shell, no quoting.
+// Running npm is awkward to do safely on Windows: `npm` is a .cmd shim that Node
+// refuses to execFile since the CVE-2024-27980 fix, and shell:true concatenates
+// arguments instead of escaping them (DEP0190). Running npm's own JS entry with the
+// node binary we are already inside sidesteps both.
 const NPM_CLI = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
 const npmArgv = (argv) =>
   (existsSync(NPM_CLI) ? [process.execPath, [NPM_CLI, ...argv]] : ['npm', argv])
@@ -94,10 +101,9 @@ const npmArgv = (argv) =>
  * Run a command for its output. Returns {status, out}; status null = not on PATH.
  *
  * `cwd` is destructured explicitly. An earlier version took only `timeout`, so the
- * `cwd` passed by the verification step was silently dropped and the child inherited
- * this process's directory instead. Run from the repo that still printed
- * "264 tests pass from the installed copy" -- it had tested the repo. A check that
- * passes against the wrong thing is worse than no check.
+ * cwd passed by the verification step was silently dropped and the child inherited
+ * this process's directory -- which, run from a clone, made the installed-copy check
+ * test the repo instead, and report a confident pass either way.
  */
 function run(cmd, argv, { timeout = 120_000, cwd } = {}) {
   try {
@@ -113,7 +119,18 @@ function run(cmd, argv, { timeout = 120_000, cwd } = {}) {
     }
   }
 }
-const twg = (argv, opts) => run(IS_WINDOWS ? 'twg.exe' : 'twg', argv, opts)
+
+// twg is addressed by an explicit path once we know one, so a PATH that has not been
+// refreshed since the installer ran cannot make a working install look absent.
+let TWG = TWG_EXE
+const twg = (argv, opts) => run(TWG, argv, opts)
+
+function locateTwg() {
+  if (run(TWG_EXE, ['--version'], { timeout: 30_000 }).status === 0) return TWG_EXE
+  const direct = join(TWG_BIN_DIR, TWG_EXE)
+  if (existsSync(direct) && run(direct, ['--version'], { timeout: 30_000 }).status === 0) return direct
+  return null
+}
 
 // ---------------------------------------------------------------- 1. Node.js
 
@@ -129,58 +146,124 @@ else fail('npm', 'not found on PATH — reinstall Node.js')
 
 // ---------------------------------------------------------------- 3. twg
 
-let twgOk = false
-let version = twg(['--version'], { timeout: 30_000 })
-
-if (version.status === null && OPT.installTwg) {
-  note('twg not found; installing with Atlassian\'s documented installer:')
-  for (const c of TWG_INSTALL) note(`  ${c}`)
-  flush()
-  const shell = IS_WINDOWS ? 'powershell.exe' : 'bash'
-  const shellArgs = IS_WINDOWS
-    ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', TWG_INSTALL.join('; ')]
-    : ['-lc', TWG_INSTALL[0]]
-  const inst = run(shell, shellArgs, { timeout: 600_000 })
-  if (inst.status !== 0) console.log(inst.out.trim())
-  version = twg(['--version'], { timeout: 30_000 })
-}
-
-if (version.status === null) {
-  fail('twg', 'not installed')
-  note('')
+function officialInstructions() {
   note('Install it with Atlassian\'s own documented command:')
-  for (const c of TWG_INSTALL) note(`  ${c}`)
+  if (IS_WINDOWS) {
+    note(`  curl.exe -fsSL ${TWG_INSTALL_URL} -o twg-install.ps1`)
+    note('  powershell -ExecutionPolicy Bypass -File .\\twg-install.ps1')
+  } else {
+    note(`  curl -fsSL --retry 2 ${TWG_INSTALL_URL} | bash`)
+  }
   note('')
   note(`Docs: ${TWG_DOCS}`)
   note('twg is a standalone binary and is NOT distributed on npm.')
-  note('Re-run with --install-twg to have this script run the above for you.')
-  flush()
-  console.log('\nSetup stopped: twg is required and will not be installed without your say-so.\n')
-  process.exit(2)
-} else {
-  let detail = `v${version.out.trim()}`
-  if (!OPT.noUpgrade) {
-    // Measured on twg 1.2.8: a no-op when already current (it does not even run the
-    // skills refresh), and a forced refresh rewrote only twg's own bundle metadata --
-    // an unrelated skill directory beside it came through byte-identical.
-    // `twg upgrade` is also Atlassian's documented upgrade path.
-    const up = twg(['upgrade', '-y'], { timeout: 600_000 })
-    if (up.status !== 0) {
-      fail('twg', `upgrade exited ${up.status}`)
-      note(up.out.trim().split(/\r?\n/).slice(-3).join(' / '))
-    } else {
-      const now = twg(['--version'], { timeout: 30_000 })
-      const after = now.status === 0 ? now.out.trim() : version.out.trim()
-      detail = /up to date/i.test(up.out) ? `v${after} (current)` : `v${after} (upgraded)`
-      twgOk = true
-    }
-    if (OPT.verbose) note(up.out.trim())
-  } else {
-    twgOk = true
-    detail += ' (upgrade skipped)'
-  }
-  if (twgOk) pass('twg', detail)
 }
+
+/**
+ * Install twg with the vendor's own installer.
+ *
+ * --skip-login and --skip-skills are passed deliberately. Otherwise the installer
+ * starts an interactive browser login -- which cannot work in a non-interactive
+ * setup and would hang it -- and installs twg's own agent-skill bundles, a side
+ * effect on directories this command was not asked to touch.
+ */
+function installTwg() {
+  const work = mkdtempSync(join(tmpdir(), 'twg-install-'))
+  try {
+    const script = join(work, IS_WINDOWS ? 'twg-install.ps1' : 'twg-install.sh')
+    note(`fetching ${TWG_INSTALL_URL}`)
+
+    const curl = IS_WINDOWS ? 'curl.exe' : 'curl'
+    const dl = run(curl, ['-fsSL', '--retry', '2', TWG_INSTALL_URL, '-o', script], { timeout: 300_000 })
+    if (dl.status === null) {
+      return { ok: false, why: `${curl} is not available${IS_WINDOWS ? ' (Windows 10 1803 or newer ships it)' : ''}` }
+    }
+    if (dl.status !== 0 || !existsSync(script)) {
+      return { ok: false, why: `download failed (exit ${dl.status})`, out: dl.out }
+    }
+
+    if (IS_WINDOWS) {
+      note('powershell -NoProfile -ExecutionPolicy Bypass -File <downloaded> -Yes -SkipLogin -SkipSkills')
+      flush()
+      const r = run('powershell.exe', [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script,
+        '-Yes', '-SkipLogin', '-SkipSkills',
+      ], { timeout: 900_000 })
+      return r.status === 0 ? { ok: true } : { ok: false, why: `installer exited ${r.status}`, out: r.out }
+    }
+
+    note('bash <downloaded> --yes --skip-login --skip-skills')
+    flush()
+    const r = run('bash', [script, '--yes', '--skip-login', '--skip-skills'], { timeout: 900_000 })
+    return r.status === 0 ? { ok: true } : { ok: false, why: `installer exited ${r.status}`, out: r.out }
+  } finally {
+    rmSync(work, { recursive: true, force: true })
+  }
+}
+
+let twgOk = false
+let found = locateTwg()
+let installedTwgNow = false
+
+if (!found && !OPT.noInstallTwg) {
+  note('twg not found — installing it from Atlassian:')
+  const res = installTwg()
+  if (!res.ok) {
+    fail('twg', `automatic install failed: ${res.why}`)
+    note('')
+    officialInstructions()
+    if (res.out && OPT.verbose) note(res.out.trim().split(/\r?\n/).slice(-5).join(' / '))
+    flush()
+    console.log('\nSetup stopped: twg is required and could not be installed automatically.\n')
+    process.exit(2)
+  }
+  // The installer updates the USER PATH and prints "open a new terminal"; this
+  // process will never see that, so look where it installs to.
+  found = locateTwg()
+  installedTwgNow = true
+}
+
+if (!found) {
+  if (OPT.noInstallTwg) fail('twg', 'not installed (--no-install-twg was passed)')
+  else {
+    fail('twg', 'the installer reported success but the binary was not found afterwards')
+    note(`Looked on PATH and in ${TWG_BIN_DIR}`)
+  }
+  note('')
+  officialInstructions()
+  flush()
+  console.log('\nSetup stopped: twg is required.\n')
+  process.exit(2)
+}
+
+TWG = found
+const version = twg(['--version'], { timeout: 30_000 })
+let detail = `v${version.out.trim()}`
+
+if (installedTwgNow) {
+  detail += ' (installed)'
+  twgOk = true
+} else if (OPT.noUpgrade) {
+  detail += ' (upgrade skipped)'
+  twgOk = true
+} else {
+  // Measured on twg 1.2.8: a no-op when already current -- it does not even run the
+  // skills refresh -- and when forced, the refresh rewrote only twg's own bundle
+  // metadata, leaving an unrelated skill directory beside it byte-identical.
+  // `twg upgrade` is also Atlassian's own documented upgrade path.
+  const up = twg(['upgrade', '-y'], { timeout: 900_000 })
+  if (up.status !== 0) {
+    fail('twg', `upgrade exited ${up.status}`)
+    note(up.out.trim().split(/\r?\n/).slice(-3).join(' / '))
+  } else {
+    const now = twg(['--version'], { timeout: 30_000 })
+    const after = now.status === 0 ? now.out.trim() : version.out.trim()
+    detail = /up to date/i.test(up.out) ? `v${after} (current)` : `v${after} (upgraded)`
+    twgOk = true
+  }
+  if (OPT.verbose) note(up.out.trim())
+}
+if (twgOk) pass('twg', detail)
 
 // ---------------------------------------------------------------- 4. Jira auth
 
@@ -190,7 +273,10 @@ if (verdict.ok) {
   pass('Jira sign-in', verdict.summary)
 } else {
   fail('Jira sign-in', verdict.summary)
+  // twg's own remediation beats anything written here by hand: the first draft of
+  // this file guessed `twg login` where twg itself says `twg login --force`.
   if (verdict.fix) note(`run:  ${verdict.fix}`)
+  if (installedTwgNow) note('twg was just installed, so signing in is the remaining step.')
   if (/unable to connect/i.test(who.out)) {
     note('Inside a sandbox this message is usually NOT a network problem —')
     note('see references/codex.md, "twg says Unable to connect".')
@@ -199,9 +285,9 @@ if (verdict.ok) {
 
 // ---------------------------------------------------------------- 5. dependencies
 
-// There are none, and saying "installed dependencies" when nothing was installed is
-// the kind of decorative green this project exists to avoid. If a real dependency is
-// ever added, this installs it rather than continuing to claim there are none.
+// There are none. Reporting "installed dependencies" when nothing was installed is
+// the decorative green this project exists to avoid. If a real dependency is ever
+// added, this installs it instead of continuing to claim there are none.
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const deps = Object.keys(pkg.dependencies ?? {})
 if (deps.length === 0) {
@@ -214,7 +300,7 @@ if (deps.length === 0) {
   else fail('dependencies', `npm install exited ${inst.status}`)
 }
 
-// ---------------------------------------------------------------- 6. install
+// ---------------------------------------------------------------- 6. the skill
 
 const PAYLOAD = ['SKILL.md', 'README.md', 'references', 'scripts']
 const targets = [
@@ -225,27 +311,41 @@ const targets = [
 const isLink = (p) => {
   try { return lstatSync(p).isSymbolicLink() } catch { return false }
 }
-const isOurs = (dir) => {
+
+/** What we previously installed here, if anything. */
+function readManifest(dir) {
+  try { return JSON.parse(readFileSync(join(dir, MANIFEST), 'utf8')) } catch { return null }
+}
+
+// A directory is ours if it carries our manifest, or our SKILL.md frontmatter (which
+// is how installs made before the manifest existed identify themselves). Anything
+// else belongs to somebody else and is never replaced without --force.
+function isOurs(dir) {
+  const m = readManifest(dir)
+  if (m?.name === 'jira-worklog') return true
   try { return readFileSync(join(dir, 'SKILL.md'), 'utf8').includes('name: jira-worklog') }
   catch { return false }
 }
 
-// Under npx, ROOT is a cache directory npm prunes without warning. A junction into it
-// would dangle silently and the skill would vanish mid-session.
+// Under npx, ROOT is a cache directory npm prunes without warning: a junction into it
+// would dangle silently and the skill would disappear mid-session.
 const UNDER_NPX = ROOT.includes(`${join('_npx')}`) || process.env.npm_command === 'exec'
 if (OPT.link && UNDER_NPX) {
-  fail('install', '--link cannot be used under npx')
-  note('ROOT here is an npx cache directory that npm prunes without warning,')
-  note('so the junction would dangle. Clone the repo and run --link from there.')
+  fail('jira-worklog', '--link cannot be used under npx')
+  note('ROOT here is an npx cache directory npm prunes without warning, so the')
+  note('junction would dangle. Clone the repo and run --link from there.')
 }
 
 let installed = 0
 const installedDirs = []
+const transitions = []
 
 if (!(OPT.link && UNDER_NPX)) {
   for (const { harness, dir } of targets) {
     const parent = dirname(dirname(dir))
     if (!existsSync(parent)) { skip(harness, `${parent} not present`); continue }
+
+    const before = readManifest(dir)
 
     if (existsSync(dir) || isLink(dir)) {
       if (!OPT.force && !isOurs(dir) && !isLink(dir)) {
@@ -253,9 +353,10 @@ if (!(OPT.link && UNDER_NPX)) {
         note(`${dir} — move it aside, or pass --force`)
         continue
       }
-      // NEVER rmSync a junction: Node's recursive remove has historically hit EPERM on
-      // a Windows reparse point, fallen back to a stat that FOLLOWS it, and deleted the
-      // target — which under --link is the repo. rmdirSync unlinks without descending.
+      // NEVER rmSync a junction. Node's recursive remove has historically hit EPERM
+      // on a Windows reparse point, fallen back to a stat that FOLLOWS the link, and
+      // deleted the target -- which under --link is the repo itself. rmdirSync
+      // unlinks the reparse point and never descends.
       if (isLink(dir)) rmdirSync(dir)
       else rmSync(dir, { recursive: true, force: true })
     }
@@ -270,9 +371,24 @@ if (!(OPT.link && UNDER_NPX)) {
           const from = join(ROOT, entry)
           if (existsSync(from)) cpSync(from, join(dir, entry), { recursive: true })
         }
+        // package.json is not part of the payload, so without this the installed copy
+        // would carry no version at all and "update the skill when required" would be
+        // a claim with nothing behind it.
+        writeFileSync(join(dir, MANIFEST), `${JSON.stringify({
+          name: 'jira-worklog',
+          version: pkg.version,
+          installedAt: new Date().toISOString(),
+          source: UNDER_NPX ? 'npx' : ROOT,
+        }, null, 2)}\n`)
       }
       installed += 1
       installedDirs.push({ harness, dir })
+      transitions.push(
+        OPT.link ? 'linked'
+          : !before ? `v${pkg.version} (new)`
+            : before.version === pkg.version ? `v${pkg.version} (current, reinstalled)`
+              : `v${before.version} → v${pkg.version} (updated)`,
+      )
     } catch (err) {
       fail(harness, err.message)
     }
@@ -283,7 +399,7 @@ if (installed === 0 && !(OPT.link && UNDER_NPX)) {
   fail('jira-worklog', 'no harness directory found — installed nowhere')
   note('Expected ~/.claude (Claude Code) or ~/.codex (Codex CLI) to exist.')
 } else if (installed > 0) {
-  pass('jira-worklog', `installed to ${installed} location${installed === 1 ? '' : 's'}`)
+  pass('jira-worklog', `${transitions[0]} — ${installed} location${installed === 1 ? '' : 's'}`)
   for (const { harness, dir } of installedDirs) note(`${harness}: ${dir}`)
 }
 
@@ -292,10 +408,9 @@ if (installed === 0 && !(OPT.link && UNDER_NPX)) {
 // Prove the installed copy RUNS, rather than trusting that the copy succeeded.
 // Reads only: the suite touches no network and writes nothing to Jira.
 //
-// "0 tests passed" is a FAILURE, not a pass. An exit code of 0 from a runner that
-// found no tests is the most convincing false green available here -- it is exactly
-// what a broken glob, a missing directory or a botched copy produces, and the naive
-// version of this check printed a tick beside the word "verification" for it.
+// "0 tests passed" is a FAILURE. Exit 0 from a runner that found nothing is exactly
+// what a bad glob, a wrong cwd, or a botched copy produces, and it is
+// indistinguishable from success unless you refuse it.
 function countsFrom(text) {
   // node --test uses the spec reporter on a TTY and TAP when piped; accept both.
   const grab = (key) => {
@@ -310,18 +425,14 @@ if (installed > 0) {
   const frontmatter = /^---\r?\n[\s\S]*?\bname:\s*jira-worklog\b/m
     .test(readFileSync(join(dir, 'SKILL.md'), 'utf8'))
 
-  // The glob is expanded here rather than handed to node --test as a pattern:
-  // whether the runner expands it depends on the Node version and on how the
-  // process was launched, and when it does not, the runner finds nothing, exits 0,
-  // and the result is indistinguishable from success.
+  // Forward slashes, NOT path.join: node --test treats each argument as a glob, and a
+  // backslash is an ESCAPE inside one, so 'scripts\test\x.test.mjs' reduces to
+  // 'scriptstestx.test.mjs' and matches nothing -- the runner then exits 0 having run
+  // nothing at all.
   let testFiles = []
   try {
     testFiles = readdirSync(join(dir, 'scripts', 'test'))
       .filter((f) => f.endsWith('.test.mjs'))
-      // Forward slashes deliberately, NOT path.join: node --test treats each argument
-      // as a glob pattern, and in a glob a backslash is an ESCAPE. The Windows form
-      // 'scripts\test\x.test.mjs' therefore reduces to 'scriptstestx.test.mjs', which
-      // matches nothing -- the runner then exits 0 having run nothing at all.
       .map((f) => `scripts/test/${f}`)
   } catch { /* handled by the empty check below */ }
 
@@ -340,7 +451,6 @@ if (installed > 0) {
     } else if (tests === null) {
       fail('verification', 'could not read a test count from the runner output')
       note('An unreadable result is treated as failure, not assumed to be success.')
-      for (const l of t.out.trim().split(/\r?\n/).slice(-4)) note(l)
     } else if (tests === 0) {
       fail('verification', `the runner exited 0 but ran NO tests (${testFiles.length} files present)`)
       note('Exit 0 with nothing run proves nothing, so it counts as a failure.')
@@ -366,6 +476,12 @@ if (failed) {
 
 console.log('Ready.')
 console.log('')
+if (installedTwgNow) {
+  console.log(`twg was installed to ${TWG_BIN_DIR} and added to your user PATH.`)
+  console.log('Open a new terminal before running `twg` yourself — this session\'s')
+  console.log('PATH predates the install.')
+  console.log('')
+}
 console.log('Open a NEW agent session and ask for the jira-worklog skill by name.')
 console.log('Discovery is the harness\'s job — a copied file is not proof it was found.')
 console.log('')

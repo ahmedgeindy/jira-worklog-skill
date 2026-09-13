@@ -7,7 +7,7 @@ import { emitManifest } from '../cmd/emit.mjs'
 const BIN = 'C:/twg/twg.exe'
 
 const ENTRY = {
-  key: 'HCFM-323', seconds: 10800, started: '2026-09-08T09:00:00.000+0300',
+  key: 'PROJ-323', seconds: 10800, started: '2026-09-08T09:00:00.000+0300',
   comment: 'moved to In Progress', dedupeState: 'CLEAR', hoursSource: 'stated',
   fingerprint: 'abc123', existingSecondsOnIssue: 0,
   evidence: [{ source: 'jira-changelog', timestamp: '2026-09-08T11:00:00.000+0300', fragment: 'status: In Progress' }],
@@ -81,7 +81,7 @@ test('a SHORT day states hours and the floor but computes NO fillable gap', () =
   assert.match(out, /7h/)
   // must never suggest how much to add, or where
   assert.equal(/2\.0h (short|remaining|to add)/i.test(out), false)
-  assert.equal(out.includes('HCFM-345'), false)
+  assert.equal(out.includes('PROJ-345'), false)
 })
 
 test('derived hours are labelled as model-authored', () => {

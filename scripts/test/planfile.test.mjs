@@ -25,7 +25,7 @@ function makePlan(over = {}) {
     days: [{
       date: '2026-09-08', existingSeconds: 0, status: 'MEETS',
       entries: [{
-        key: 'HCFM-323', numericId: '999', site: 'x.atlassian.net',
+        key: 'PROJ-323', numericId: '999', site: 'x.atlassian.net',
         seconds: 25200, started: '2026-09-08T09:00:00.000+0300',
         comment: 'status: In Progress',
         fingerprint: 'abc123', dedupeState: 'CLEAR', hoursSource: 'stated',
@@ -127,14 +127,14 @@ test('a real plan survives the JSON round-trip the production path performs', ()
     dayTotal: () => ({ seconds: 5 * 3600, status: 'OK', reason: '', countedWorklogIds: [], candidates: [] }),
     checkWindow: () => [],
     bundle: () => ({
-      perIssue: { 'HCFM-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Progress' }] },
+      perIssue: { 'PROJ-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Progress' }] },
       commentSource: 'EVIDENCED', bundleHash: 'bh',
     }),
-    resolveIssue: (key) => ({ key, numericId: '999', site: 'istnetworks-dev.atlassian.net' }),
+    resolveIssue: (key) => ({ key, numericId: '999', site: 'example.atlassian.net' }),
     now: () => Date.parse('2026-09-09T10:00:00+03:00'),
     readEstimate: () => 230400,
   }
-  const plan = runPlan({ lines: ['HCFM-323 3h'], isoDate: '2026-09-08', deps })
+  const plan = runPlan({ lines: ['PROJ-323 3h'], isoDate: '2026-09-08', deps })
 
   const dir = mkdtempSync(join(tmpdir(), 'twl-plan-'))
   try {

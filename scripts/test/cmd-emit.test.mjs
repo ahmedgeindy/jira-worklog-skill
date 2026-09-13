@@ -17,7 +17,7 @@ function makePlan(over = {}) {
     days: [{
       date: '2026-09-08', existingSeconds: 0, status: 'MEETS',
       entries: [{
-        key: 'HCFM-323', numericId: '999', site: 'x.atlassian.net',
+        key: 'PROJ-323', numericId: '999', site: 'x.atlassian.net',
         seconds: 25200, started: '2026-09-08T09:00:00.000+0300',
         comment: 'reviewed the migrator PR',
         fingerprint: 'abc123', dedupeState: 'CLEAR', hoursSource: 'stated',
@@ -189,7 +189,7 @@ test('check-write confirms exactly one row matching the planned started+seconds 
     readEstimate: () => 0,
     tokens: makeTokenStore(['abc123']),
   }
-  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
   assert.equal(r.ok, true)
   assert.equal(r.worklogId, '5001')
 })
@@ -197,7 +197,7 @@ test('check-write confirms exactly one row matching the planned started+seconds 
 test('check-write fails when the write did not land (token present)', () => {
   const p = makePlan()
   const deps = { checkWindow: () => [], readEstimate: () => 0, tokens: makeTokenStore(['abc123']) }
-  assert.equal(checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps }).ok, false)
+  assert.equal(checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps }).ok, false)
 })
 
 // Fix 2: an unknown --date must fail cleanly with a domain reason, not throw a
@@ -205,8 +205,8 @@ test('check-write fails when the write did not land (token present)', () => {
 test('check-write fails with a clear reason (not a raw TypeError) when --date names a day the plan does not contain', () => {
   const p = makePlan()
   const deps = { checkWindow: () => [], readEstimate: () => 0, tokens: makeTokenStore(['abc123']) }
-  assert.doesNotThrow(() => checkWrite({ plan: p, date: '2099-01-01', key: 'HCFM-323', deps }))
-  const r = checkWrite({ plan: p, date: '2099-01-01', key: 'HCFM-323', deps })
+  assert.doesNotThrow(() => checkWrite({ plan: p, date: '2099-01-01', key: 'PROJ-323', deps }))
+  const r = checkWrite({ plan: p, date: '2099-01-01', key: 'PROJ-323', deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /no day|contains no day/i)
 })
@@ -218,7 +218,7 @@ test('check-write fails on TWO rows matching the planned started+seconds (double
     comment: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] },
   }
   const deps = { checkWindow: () => [row, { ...row, id: '5002' }], readEstimate: () => 0, tokens: makeTokenStore(['abc123']) }
-  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /2 rows|duplicate/i)
 })
@@ -233,7 +233,7 @@ test('check-write reports ESTIMATE_CLOBBERED when the estimate moved (token pres
     readEstimate: () => 205200,
     tokens: makeTokenStore(['abc123']),
   }
-  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /ESTIMATE_CLOBBERED/)
 })
@@ -250,7 +250,7 @@ test('check-write reports GUARD BYPASSED when no approval token exists (agent sk
     readEstimate: () => 0,
     tokens: makeTokenStore(), // empty - check-cmd never ran for this fingerprint
   }
-  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /GUARD BYPASSED/)
 })
@@ -264,7 +264,7 @@ test('the realistic flow: check-cmd running first leaves the token check-write n
   assert.equal(cc.ok, true)
 
   const r = checkWrite({
-    plan: p, date: '2026-09-08', key: 'HCFM-323',
+    plan: p, date: '2026-09-08', key: 'PROJ-323',
     deps: {
       checkWindow: () => [{
         id: '5001', author: { accountId: ME }, timeSpentSeconds: 25200, started: '2026-09-08T09:00:00.000+0300',
@@ -287,10 +287,10 @@ test('the approval token is single-use: a second check-write without a fresh che
   }]
   const deps = { checkWindow: () => rows, readEstimate: () => 0, tokens }
 
-  const first = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  const first = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
   assert.equal(first.ok, true)
 
-  const second = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  const second = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
   assert.equal(second.ok, false)
   assert.match(second.reason, /GUARD BYPASSED/)
 })
@@ -298,7 +298,7 @@ test('the approval token is single-use: a second check-write without a fresh che
 test('checkWrite throws if deps.tokens is missing, rather than silently skipping bypass detection', () => {
   const p = makePlan()
   const deps = { checkWindow: () => [], readEstimate: () => 0 }
-  assert.throws(() => checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps }), /deps\.tokens/)
+  assert.throws(() => checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps }), /deps\.tokens/)
 })
 
 // --- Feature 2 fallout: cmd/plan.mjs now allows more than one entry per
@@ -310,7 +310,7 @@ test('checkWrite throws if deps.tokens is missing, rather than silently skipping
 
 function pushSecondEntry(p, over = {}) {
   p.days[0].entries.push({
-    key: 'HCFM-323', numericId: '999', site: 'x.atlassian.net',
+    key: 'PROJ-323', numericId: '999', site: 'x.atlassian.net',
     seconds: 9000, started: '2026-09-08T13:00:00.000+0300', startAt: '13:00',
     comment: 'paired with Sam',
     fingerprint: 'def456', dedupeState: 'CLEAR', hoursSource: 'stated',
@@ -324,7 +324,7 @@ function pushSecondEntry(p, over = {}) {
 test('check-write refuses to guess when the plan has more than one entry for --key on --date, and no --fingerprint was given', () => {
   const p = pushSecondEntry(makePlan())
   const deps = { checkWindow: () => [], readEstimate: () => 0, tokens: makeTokenStore(['abc123', 'def456']) }
-  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /2 entries/i)
   assert.match(r.reason, /--fingerprint/)
@@ -340,7 +340,7 @@ test('check-write disambiguates by --fingerprint when the plan has two entries f
     readEstimate: () => 0,
     tokens: makeTokenStore(['def456']),
   }
-  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', fingerprint: 'def456', deps })
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', fingerprint: 'def456', deps })
   assert.equal(r.ok, true)
   assert.equal(r.worklogId, '5002')
 })
@@ -361,7 +361,7 @@ test('check-write picks the row for THIS entry when a same-length row exists at 
     readEstimate: () => 0,
     tokens: makeTokenStore(['def456']),
   }
-  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', fingerprint: 'def456', deps })
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', fingerprint: 'def456', deps })
   assert.equal(r.ok, true)
   assert.equal(r.worklogId, '5002')
 })
@@ -377,13 +377,13 @@ test('check-write does NOT accept a row of the right length at the WRONG start t
     readEstimate: () => 0,
     tokens: makeTokenStore(['abc123']),
   }
-  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /did not land/i)
 })
 
 test('check-write ignores another author\'s row at the same start time and duration', () => {
-  // HCFM-345 really does carry a second person's worklogs; an unfiltered read
+  // PROJ-345 really does carry a second person's worklogs; an unfiltered read
   // there measured roughly double the truth.
   const p = makePlan()
   const deps = {
@@ -393,7 +393,7 @@ test('check-write ignores another author\'s row at the same start time and durat
     readEstimate: () => 0,
     tokens: makeTokenStore(['abc123']),
   }
-  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /did not land/i)
 })
@@ -401,7 +401,7 @@ test('check-write ignores another author\'s row at the same start time and durat
 test('check-write with an UNKNOWN --fingerprint against a multi-entry key fails cleanly, not by picking a wrong entry', () => {
   const p = pushSecondEntry(makePlan())
   const deps = { checkWindow: () => [], readEstimate: () => 0, tokens: makeTokenStore(['abc123', 'def456']) }
-  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', fingerprint: 'nonexistent', deps })
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', fingerprint: 'nonexistent', deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /none with fingerprint/i)
 })
@@ -416,7 +416,7 @@ test('check-write still works with no --fingerprint when the key has exactly one
     readEstimate: () => 0,
     tokens: makeTokenStore(['abc123']),
   }
-  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'HCFM-323', deps })
+  const r = checkWrite({ plan: p, date: '2026-09-08', key: 'PROJ-323', deps })
   assert.equal(r.ok, true)
   assert.equal(r.worklogId, '5001')
 })

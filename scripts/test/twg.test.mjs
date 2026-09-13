@@ -7,7 +7,7 @@ import { renderPsCommand } from '../lib/psline.mjs'
 
 test('a normal read argv passes', () => {
   assert.doesNotThrow(() => assertArgvSafe(
-    ['jira', 'workitem', 'worklog', 'query', '--issue-id', 'HCFM-323', '-o', 'json'],
+    ['jira', 'workitem', 'worklog', 'query', '--issue-id', 'PROJ-323', '-o', 'json'],
   ))
 })
 
@@ -38,7 +38,7 @@ test('a shell redirection token can never appear in argv', () => {
 
 test('spawning a worklog add is refused outright', () => {
   const argv = buildAddArgv({
-    key: 'HCFM-323', seconds: 25200,
+    key: 'PROJ-323', seconds: 25200,
     started: '2026-09-08T09:00:00.000+0300', comment: 'x',
   })
   assert.throws(() => assertArgvSafe(argv), /refusing to SPAWN a worklog add/i)
@@ -50,7 +50,7 @@ test('spawning a worklog add is refused outright', () => {
 
 test('but BUILDING and RENDERING an add still works - text cannot write to Jira', () => {
   const entry = {
-    key: 'HCFM-323', seconds: 25200,
+    key: 'PROJ-323', seconds: 25200,
     started: '2026-09-08T09:00:00.000+0300', comment: 'status: In Progress',
   }
   const argv = buildAddArgv(entry)

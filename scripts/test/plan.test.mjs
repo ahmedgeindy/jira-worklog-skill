@@ -65,14 +65,14 @@ test('a pinned entry is not itself shifted by other implicit entries around it',
 })
 
 test('the exact motivating case: a standup pinned inside an implicit dev-work block', () => {
-  // 'HCFM-345 1h @11:00 :: daily standup' / 'HCFM-345 2.5h @13:00 :: ...' /
-  // 'HCFM-324 8h :: development work'. The implicit 8h block (09:00-17:00)
+  // 'PROJ-345 1h @11:00 :: daily standup' / 'PROJ-345 2.5h @13:00 :: ...' /
+  // 'PROJ-324 8h :: development work'. The implicit 8h block (09:00-17:00)
   // necessarily OVERLAPS both pinned entries on the calendar - sequenceStarts
   // must allow that overlap rather than trying to route around it.
   const out = sequenceStarts('Asia/Riyadh', '2026-09-08', [
-    { key: 'HCFM-345', seconds: 3600, startAt: '11:00' },
-    { key: 'HCFM-345', seconds: 9000, startAt: '13:00' },
-    { key: 'HCFM-324', seconds: 28800 },
+    { key: 'PROJ-345', seconds: 3600, startAt: '11:00' },
+    { key: 'PROJ-345', seconds: 9000, startAt: '13:00' },
+    { key: 'PROJ-324', seconds: 28800 },
   ])
   assert.equal(out[0].started, '2026-09-08T11:00:00.000+0300')
   assert.equal(out[1].started, '2026-09-08T13:00:00.000+0300')
@@ -91,7 +91,7 @@ test('a run of only pinned entries never triggers the past-midnight refusal, no 
 
 test('buildAddArgv carries all five mandatory flags', () => {
   const argv = buildAddArgv({
-    key: 'HCFM-323', seconds: 10800,
+    key: 'PROJ-323', seconds: 10800,
     started: '2026-09-08T09:00:00.000+0300', comment: 'did the thing',
   })
   for (const f of ['--time-spent-seconds', '--started', '--adjust-estimate', '--notify-users', '--comment-format']) {
@@ -116,7 +116,7 @@ test('buildAddArgv refuses to build without a started value', () => {
 test('validateComment rejects a fact absent from the evidence bundle', () => {
   const ev = [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Progress' }]
   assert.equal(validateComment('moved to In Progress', ev).ok, true)
-  assert.equal(validateComment('fixed HCFM-999 and merged abc1234', ev).ok, false)
+  assert.equal(validateComment('fixed PROJ-999 and merged abc1234', ev).ok, false)
 })
 
 test('a comment grounded in NOTHING is rejected, not silently allowed', () => {

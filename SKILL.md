@@ -1,6 +1,6 @@
 ---
 name: jira-worklog
-description: Use when logging time to Jira from issue URLs or keys with hours, reviewing what is already logged for a day, or checking a day against the 7h policy floor. Drives scripts/timelog.mjs through plan, a human gate, guarded writes, and verify — against Asia/Riyadh Jira days and a Sunday–Thursday work week. Handles backdating, duplicate detection against live server state, evidence-backed worklog comments, and estimate protection. Use for "log my time", "log 3h on HCFM-323", "what did I log yesterday", "check my day against policy", or a pasted list of Jira URLs with hours.
+description: Use when logging time to Jira from issue URLs or keys with hours, reviewing what is already logged for a day, or checking a day against the 7h policy floor. Drives scripts/timelog.mjs through plan, a human gate, guarded writes, and verify — against Asia/Riyadh Jira days and a Sunday–Thursday work week. Handles backdating, duplicate detection against live server state, evidence-backed worklog comments, and estimate protection. Use for "log my time", "log 3h on PROJ-323", "what did I log yesterday", "check my day against policy", or a pasted list of Jira URLs with hours.
 ---
 
 ## Overview
@@ -57,9 +57,9 @@ resolve it to an explicit `YYYY-MM-DD` and **say which date you resolved it to**
 Input is one entry per line on stdin:
 
 ```
-HCFM-323 3h
-https://istnetworks-dev.atlassian.net/browse/HCFM-345 2h
-HCFM-350 2h :: reviewed the migrator PR and fixed the parity check
+PROJ-323 3h
+https://example.atlassian.net/browse/PROJ-345 2h
+PROJ-350 2h :: reviewed the migrator PR and fixed the parity check
 ```
 
 `3h`, `2.5h`, `90m`, `1h 30m`, `1:30` and a bare `7` (meaning hours) all parse. `d`/`w` units are

@@ -13,15 +13,17 @@ here exists to make the write correct the first time.
 
 ## Before you try it
 
-1. **`twg` installed and logged in.** `twg whoami` must print your name and account id.
-2. **Node 18+.** Zero runtime dependencies; the tests use `node:test`.
-3. **A Jira account whose worklogs you are allowed to write.**
+Two things, and setup handles the rest:
 
-`npm run setup` checks all three and tells you which one is missing, so you do not
-have to work that out yourself.
+1. **Node 18+ and npm.** Zero runtime dependencies; the tests use `node:test`.
+2. **A Jira account whose worklogs you are allowed to write**, and one `twg login`.
+
+You do **not** need to install twg yourself — setup does it. The only step it cannot
+do for you is signing in, because that is an interactive browser login; it tells you
+the exact command when it is needed.
 
 ```bash
-npm test          # 264 tests, no network, no Jira access needed
+npm test          # 287 tests, no network, no Jira access needed
 ```
 
 ## Install
@@ -29,24 +31,29 @@ npm test          # 264 tests, no network, no Jira access needed
 One command, on a fresh machine:
 
 ```bash
-npx <package-name> setup
+npx <package-name>@latest setup
 ```
 
 ```
-  ✓ Node.js        v22.14.0
-  ✓ npm            v11.5.1
-  ✓ twg            v1.2.8 (current)
-  ✓ Jira sign-in   Your Name
-  ✓ dependencies   none required (zero runtime dependencies)
-  ✓ jira-worklog   installed to 2 locations
-  ✓ verification   264 tests pass from the installed copy
+  ✓ Node.js       v22.14.0
+  ✓ npm           v11.5.1
+  ✓ twg           v1.2.8 (installed)
+  ✓ Jira sign-in  Your Name
+  ✓ dependencies  none required (zero runtime dependencies)
+  ✓ jira-worklog  v1.0.0 (new) — 2 locations
+  ✓ verification  264 tests pass from the installed copy
 
 Ready.
 ```
 
-Each line can only appear by actually being true — `Jira sign-in` runs `twg whoami`,
-and `verification` runs the installed copy's own test suite. Any check that fails
-prints `✗`, says what to run, and exits 2; nothing later is reported as fine.
+That is the whole onboarding. There is no second command, and no flag a teammate
+has to know about: if twg is missing it is installed, and if it is present it is
+upgraded.
+
+Every line can only appear by actually being true. `twg` runs the binary,
+`Jira sign-in` runs `twg whoami`, and `verification` runs the installed copy's own
+test suite from the directory it was installed into. Any check that fails prints
+`✗`, says exactly what to run, and exits 2 — nothing after it is reported as fine.
 
 From a clone instead of npm:
 
@@ -62,32 +69,57 @@ npm run setup       # same thing
 | Codex CLI | `~/.codex/skills/jira-worklog/` |
 
 A harness whose config directory does not exist is skipped with a `-` line. If
-*neither* exists, that is a failure — installing nowhere is not success.
+*neither* exists that is a failure — installing nowhere is not success.
 
-**Flags:** `--install-twg` installs twg with Atlassian's documented installer when
-it is missing; `--no-upgrade` leaves twg alone; `--link` symlinks instead of copying
-(clones only — it is refused under `npx`, where the source is a cache npm prunes);
-`--force` replaces a directory that is not this skill.
+**Flags** (none of them needed for normal use): `--no-install-twg` leaves twg alone
+when it is missing; `--no-upgrade` skips `twg upgrade`; `--link` symlinks instead of
+copying, for people working *on* the skill (refused under `npx`, where the source is
+a cache npm prunes); `--force` replaces a directory that is not this skill.
 
-**Re-running is safe.** It is idempotent and refuses rather than clobbering a
-directory it did not install.
+### Updating, and running it twice
+
+`npx <package-name>@latest setup` is also the update command. Re-running is safe:
+
+- the installed copy carries `.jira-worklog-install.json`, so setup reports what
+  actually happened — `v1.0.0 (new)`, `v1.0.0 (current, reinstalled)`, or
+  `v1.0.0 → v1.0.1 (updated)` — rather than claiming an update it did not make;
+- `twg upgrade` runs, which is a no-op when twg is already current;
+- **only** `jira-worklog` is touched. Every other skill directory beside it is left
+  exactly as it was, and a directory that is not this skill is refused rather than
+  replaced.
+
+Use `@latest`: npx caches aggressively, and without it you can silently re-run an
+old version.
 
 ### If twg is missing
 
 twg is a standalone binary and is **not** on npm — it needs no Node at all. Setup
-will not download it for you unless you pass `--install-twg`; otherwise it prints
-Atlassian's own documented commands and stops:
+installs it for you, using Atlassian's own installer from Atlassian's own domain:
 
-```bash
-# macOS / Linux
-curl -fsSL --retry 2 https://teamwork-graph.atlassian.com/cli/install | bash
-
-# Windows
-curl.exe -fsSL https://teamwork-graph.atlassian.com/cli/install.ps1 -o twg-install.ps1
-powershell -ExecutionPolicy Bypass -File .	wg-install.ps1
-```
+| Platform | What setup runs |
+|---|---|
+| Windows | downloads `https://teamwork-graph.atlassian.com/cli/install.ps1`, then `powershell -NoProfile -ExecutionPolicy Bypass -File <it> -Yes -SkipLogin -SkipSkills` |
+| macOS / Linux | downloads `https://teamwork-graph.atlassian.com/cli/install`, then `bash <it> --yes --skip-login --skip-skills` |
 
 Docs: <https://developer.atlassian.com/platform/teamwork-graph/twg-cli/getting-started/installation/>
+
+The exact command is printed before it runs. Three details worth knowing:
+
+- **`--skip-login`** — the installer would otherwise open an interactive browser
+  login, which cannot complete inside a non-interactive setup and would hang it.
+  Signing in stays a separate, visible step.
+- **`--skip-skills`** — the installer would otherwise install twg's own agent-skill
+  bundles. That is a side effect on directories you did not ask this command to
+  touch.
+- **The installer updates your user `PATH` and says "open a new terminal."** Setup
+  cannot open one, so it looks for the binary directly in the documented install
+  directory (`%LOCALAPPDATA%\Programs\twg\bin`, or `~/.local/bin`) instead of
+  trusting a `PATH` that will not refresh until your next shell. You will still want
+  a new terminal before running `twg` yourself, and setup says so.
+
+Nothing else is ever downloaded — no mirrors, no third-party URLs, no other
+binaries. If the install fails for any reason, setup exits 2 and prints the official
+commands rather than continuing as though twg were present.
 
 ### If you are not signed in to Jira
 
@@ -96,7 +128,11 @@ Setup fails that check and quotes twg's own error and its own fix — not a gues
 ```
   ✗ Jira sign-in  You're not signed in. Run `twg login --force` to authenticate...
       run:  twg login --force
+
+Not ready. Fix the ✗ lines above and run this again.
 ```
+
+Exit code 2. It does not pretend the machine is ready.
 
 ### One check setup cannot do for you
 
@@ -151,7 +187,7 @@ not formatted.
 A prompt that works:
 
 ```
-Use the jira-worklog skill. Issue HCFM-223. Every Sunday-Thursday from
+Use the jira-worklog skill. Issue PROJ-223. Every Sunday-Thursday from
 2026-08-02 to 2026-09-13, 7.5h starting @09:00. Skip any day that already
 has my time on it. Show me the day-by-day plan before writing anything.
 ```
@@ -159,7 +195,7 @@ has my time on it. Show me the day-by-day plan before writing anything.
 Five things make that one work, and each is a real mistake somebody made first.
 
 **1. Name the work item, and name the right one.**
-`HCFM-223`, not "this task" or "the migration one". The skill logs where you point
+`PROJ-223`, not "this task" or "the migration one". The skill logs where you point
 it. The most expensive mistake available here is a confidently-executed backfill
 onto the wrong key — the hours are right, the dates are right, and 230 hours land
 on somebody else's issue.
@@ -209,7 +245,7 @@ blank where there isn't.
 For contrast — this is a real first draft, and every numbered problem above is in it:
 
 ```
-/jira-worklog use this task HCFM-133 log all last month until now our working
+/jira-worklog use this task PROJ-133 log all last month until now our working
 daily on migration 7:30h and for details log write getting from our history
 working on it
 ```
@@ -218,7 +254,7 @@ working on it
 because the skill was not installed anywhere the harness looks. `npm run setup`
 fixes that; afterwards, asking for the skill by name always works, and clients
 that expose skills as slash commands will offer it as `/jira-worklog` too.
-Then: `HCFM-133` was the wrong issue; "last month until now" is unresolvable;
+Then: `PROJ-133` was the wrong issue; "last month until now" is unresolvable;
 `7:30h` used to mean 30 hours; and "from our history" asks for something the
 skill refuses to do.
 
@@ -267,17 +303,17 @@ Each day still gets its own gate, its own guards and its own writes. Only genera
 
 ## Worked example: a real work item, start to finish
 
-Say you spent Tuesday 12 January on **HCFM-223**. Here is the whole loop with real output.
+Say you spent Tuesday 12 January on **PROJ-223**. Here is the whole loop with real output.
 
 ### Input formats — the issue is named by key or by URL
 
 Every line is `<issue> <hours> [@HH:MM] [:: comment]`. All of these name the same work item:
 
 ```
-HCFM-223 7.5h
-hcfm-223 7.5h                                              # case is normalised
-https://yoursite.atlassian.net/browse/HCFM-223 7.5h        # browse URL
-https://yoursite.atlassian.net/jira/software/c/projects/HCFM/boards/12?selectedIssue=HCFM-223 7.5h
+PROJ-223 7.5h
+proj-223 7.5h                                              # case is normalised
+https://yoursite.atlassian.net/browse/PROJ-223 7.5h        # browse URL
+https://yoursite.atlassian.net/jira/software/c/projects/HCFM/boards/12?selectedIssue=PROJ-223 7.5h
 ```
 
 Hours accept `7.5h`, `7h 30m`, `450m`, `7:30`, or a bare `7.5` (meaning hours).
@@ -285,13 +321,13 @@ Hours accept `7.5h`, `7h 30m`, `450m`, `7:30`, or a bare `7.5` (meaning hours).
 timesheet is not worth the convenience.
 
 Pasting a URL is checked, not trusted: the host in the URL must match the site the key actually
-resolves to, and the key is read from the **path**, so a poisoned `?jql=key=HCFM-999` cannot
-override `/browse/HCFM-223`.
+resolves to, and the key is read from the **path**, so a poisoned `?jql=key=PROJ-999` cannot
+override `/browse/PROJ-223`.
 
 ### 1. Plan — read-only, touches nothing
 
 ```bash
-echo 'HCFM-223 7.5h @09:00 :: parity engine checkpoint resume fix, 2114 tests green' \
+echo 'PROJ-223 7.5h @09:00 :: parity engine checkpoint resume fix, 2114 tests green' \
   | node scripts/timelog.mjs plan --date 2026-01-12 --out plan.json
 ```
 
@@ -299,9 +335,9 @@ echo 'HCFM-223 7.5h @09:00 :: parity engine checkpoint resume fix, 2114 tests gr
 DAY 2026-01-12 (Tuesday)
   already on server: 0.0h
 
-  HCFM-223  7.5h  @09:00  (start PINNED by you)  [CLEAR]  (comment USER_SUPPLIED, not evidence-derived)
+  PROJ-223  7.5h  @09:00  (start PINNED by you)  [CLEAR]  (comment USER_SUPPLIED, not evidence-derived)
       comment: parity engine checkpoint resume fix, 2114 tests green
-      & 'twg' 'jira' 'workitem' 'worklog' 'add' '--issue-id' 'HCFM-223' '--time-spent-seconds' '27000' '--started' '2026-01-12T09:00:00.000+0300' '--adjust-estimate' 'leave' '--notify-users' 'false' '--comment-format' 'plain' '--comment' 'parity engine checkpoint resume fix, 2114 tests green' '-o' 'json'
+      & 'twg' 'jira' 'workitem' 'worklog' 'add' '--issue-id' 'PROJ-223' '--time-spent-seconds' '27000' '--started' '2026-01-12T09:00:00.000+0300' '--adjust-estimate' 'leave' '--notify-users' 'false' '--comment-format' 'plain' '--comment' 'parity engine checkpoint resume fix, 2114 tests green' '-o' 'json'
 
   resulting day total: 7.5h
   STATUS: MEETS the 7h floor
@@ -339,7 +375,7 @@ worklog id:
 
 ```bash
 node scripts/timelog.mjs check-write --plan plan.json --date 2026-01-12 \
-  --expect-hash 64c830368fd8 --key HCFM-223
+  --expect-hash 64c830368fd8 --key PROJ-223
 # -> OK worklog 227701
 ```
 
@@ -352,8 +388,8 @@ Allowed only when each has its own explicit `@HH:MM` — otherwise it is indisti
 repeated line:
 
 ```
-HCFM-223 1h   @11:00 :: daily standup
-HCFM-223 2.5h @13:00 :: data-bug investigation
+PROJ-223 1h   @11:00 :: daily standup
+PROJ-223 2.5h @13:00 :: data-bug investigation
 ```
 
 ### Several work items across several days
@@ -379,7 +415,7 @@ SCOPE: 2 days, 3 writes, plan files in ./plans
 Refusals are instructions, never stack traces. Re-running a day you already wrote:
 
 ```
-  HCFM-223  7.5h  @09:00  [DUPLICATE]
+  PROJ-223  7.5h  @09:00  [DUPLICATE]
 ...
 ABORT: DUPLICATE at write time (unchanged from plan time — an earlier plan/write
 for this day was never resolved) — refusing to write, stop this day and reconcile manually
@@ -396,7 +432,7 @@ A comment that does not sound like the work item it is going on:
 
 ```
       comment: rewrote the marketing landing page copy
-      ?? this comment shares no wording with the issue "guided MSSQL->PG Migrator" -
+      ?? this comment shares no wording with the issue "data import tool" -
          is this the right issue?
 ```
 
@@ -467,8 +503,11 @@ references/twg-worklog-contract.md  13 sections, each quoting the command that p
 scripts/setup.mjs                 `npm run setup` - verify twg, self-update it, install the skill
 scripts/timelog.mjs               CLI: plan / emit / check-cmd / check-write / verify
 scripts/lib/                      tz, urls, twg, twgstatus, identity, daytotal, dedup, evidence, plan, preview
-scripts/test/                     264 tests
-tools/                            release gates: package-content audit + its own tests (NOT shipped)
+scripts/test/                     264 tests (287 with the tools/ suites)
+tools/                            release gates, NOT shipped in the package
+  pkgaudit.mjs                    the forbidden-content rules (pure, unit tested)
+  audit-package.mjs               packs a real tarball and scans what would ship
+  e2e-setup.mjs                   12 scenarios against the installed tarball
 ```
 
 ## Reading the commit history
