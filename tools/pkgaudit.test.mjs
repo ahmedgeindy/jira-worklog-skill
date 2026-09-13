@@ -77,6 +77,18 @@ test('the strings removed in the public scrub are all detectable', () => {
   assert.ok(ids('source DB ISTServiceEdge', sev).includes('internal-product'))
 })
 
+test('an issue key is caught even without a word boundary before it', () => {
+  // The regression that made audit:public report CLEAN with four real keys still in
+  // the package. Both the scrubber and this rule anchored on \b, and in '\tHCFM-223'
+  // and 'key%3DHCFM-999' the preceding character is a word character, so no boundary
+  // exists. Two checks sharing one assumption are one check.
+  const sev = { severities: ['org'] }
+  assert.ok(ids('\\tHCFM-223 7.5h', sev).includes('internal-issue-key'), 'after \\t escape')
+  assert.ok(ids('?jql=key%3DHCFM-999', sev).includes('internal-issue-key'), 'after %3D')
+  assert.ok(ids('xHCFM-1', sev).includes('internal-issue-key'), 'glued to a letter')
+  assert.ok(ids('see hcfm-42 please', sev).includes('internal-issue-key'), 'lowercase')
+})
+
 test('the synthetic replacements the scrub introduced are clean', () => {
   const sev = { severities: ['secret', 'pii', 'internal', 'org'] }
   assert.deepEqual(ids('https://example.atlassian.net/browse/PROJ-323 2h', sev), [])

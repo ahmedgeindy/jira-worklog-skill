@@ -22,7 +22,7 @@ test('parseHours rejects nonsense rather than defaulting', () => {
 })
 
 test('path key beats a poisoned query-string key', () => {
-  const r = parseLine('https://example.atlassian.net/browse/PROJ-323?jql=key%3DHCFM-999 2h')
+  const r = parseLine('https://example.atlassian.net/browse/PROJ-323?jql=key%3DPROJ-999 2h')
   assert.equal(r.key, 'PROJ-323')
   assert.equal(r.host, 'example.atlassian.net')
   assert.equal(r.seconds, 7200)

@@ -396,9 +396,9 @@ PROJ-223 2.5h @13:00 :: data-bug investigation
 
 ```bash
 printf '%s\n' \
-  '2026-01-12\tHCFM-223 7.5h @09:00 :: parity engine checkpoint resume fix' \
-  '2026-01-13\tHCFM-223 4h   @09:00 :: pagination fix on 1.55M invitations' \
-  '2026-01-13\tHCFM-345 1h   @11:00 :: daily standup' \
+  '2026-01-12\tPROJ-223 7.5h @09:00 :: parity engine checkpoint resume fix' \
+  '2026-01-13\tPROJ-223 4h   @09:00 :: pagination fix on 1.55M invitations' \
+  '2026-01-13\tPROJ-345 1h   @11:00 :: daily standup' \
   | node scripts/timelog.mjs plan --manifest --out-dir ./plans
 ```
 
