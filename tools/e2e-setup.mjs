@@ -29,6 +29,15 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const IS_WINDOWS = platform() === 'win32'
 const KEEP = process.argv.includes('--keep')
 
+// A CI runner has no Jira session, so a run that is otherwise perfect still exits 2
+// with exactly one failure. That is correct behaviour, not a broken scenario -- so in
+// this mode "success" means every other check ticked and the ONLY cross is sign-in.
+// Asserting merely "exit 2" would pass for a run that failed for six other reasons.
+const NO_JIRA = process.argv.includes('--no-jira')
+
+// Opt-in, because it downloads and runs the vendor installer for real.
+const ALLOW_TWG_INSTALL = process.argv.includes('--allow-twg-install')
+
 const NPM_CLI = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
 const npmArgv = (argv) =>
   (existsSync(NPM_CLI) ? [process.execPath, [NPM_CLI, ...argv]] : ['npm', argv])
@@ -103,22 +112,53 @@ function check(name, { status, out }, expect) {
   if (expect.exit !== undefined && status !== expect.exit) problems.push(`exit ${status}, wanted ${expect.exit}`)
   for (const s of expect.includes ?? []) if (!out.includes(s)) problems.push(`missing ${JSON.stringify(s)}`)
   for (const s of expect.excludes ?? []) if (out.includes(s)) problems.push(`must NOT contain ${JSON.stringify(s)}`)
-  for (const fn of expect.also ?? []) { const p = fn(); if (p) problems.push(p) }
+  for (const fn of expect.also ?? []) { const p = fn(out); if (p) problems.push(p) }
   results.push({ name, ok: problems.length === 0, problems, out })
   say(`${problems.length === 0 ? 'PASS' : 'FAIL'}  ${name}`)
   for (const p of problems) say(`        ${p}`)
 }
 
+/** The only failing check may be the Jira sign-in one. */
+function onlyJiraFailed(out) {
+  // Only actual check lines ("  \u2717 label  detail"). The closing summary reads
+  // "Not ready. Fix the \u2717 lines above", which contains the mark and would otherwise
+  // be counted as a second failure in every single run.
+  const crosses = out.split('\n').filter((l) => /^\s+\u2717 /.test(l))
+  if (crosses.length === 0) return 'expected the Jira sign-in check to fail here, but nothing did'
+  if (crosses.length > 1 || !crosses[0].includes('Jira sign-in')) {
+    return `the only failure should be Jira sign-in; got: ${crosses.map((c) => c.trim()).join(' | ')}`
+  }
+  return null
+}
+
+/**
+ * Expectations for a scenario that ends in "Ready." on a signed-in machine.
+ * Under --no-jira the same run is expected to exit 2 with sign-in as its sole
+ * failure -- every other tick still has to be there.
+ */
+function ready(expect = {}) {
+  const includes = (expect.includes ?? []).filter((x) => x !== 'Ready.' && x !== '\u2713 Jira sign-in')
+  if (!NO_JIRA) {
+    return { ...expect, exit: 0, includes: [...includes, '\u2713 Jira sign-in', 'Ready.'] }
+  }
+  return {
+    ...expect,
+    exit: 2,
+    includes: [...includes, '\u2717 Jira sign-in', 'twg login --force'],
+    excludes: [...(expect.excludes ?? []), 'Ready.'],
+    also: [...(expect.also ?? []), onlyJiraFailed],
+  }
+}
+
 // 1. clean install on a machine that has twg and is signed in
 const h1 = freshHome('clean')
-check('clean install', runSetup(h1, ['setup', '--no-upgrade']), {
-  exit: 0,
-  includes: ['✓ Node.js', '✓ npm', '✓ twg', '✓ Jira sign-in', '✓ dependencies',
-    '✓ jira-worklog', '(new)', '✓ verification', 'Ready.'],
+check('clean install', runSetup(h1, ['setup', '--no-upgrade']), ready({
+  includes: ['✓ Node.js', '✓ npm', '✓ twg', '✓ dependencies',
+    '✓ jira-worklog', '(new)', '✓ verification'],
   excludes: ['0 tests'],
   also: [() => (existsSync(join(h1, '.claude', 'skills', 'jira-worklog', '.jira-worklog-install.json'))
     ? null : 'install manifest was not written')],
-})
+}))
 
 // 2. the verification really ran the INSTALLED copy, not the repo
 check('verification counts come from the installed copy', results.at(-1), {
@@ -133,21 +173,19 @@ check('verification counts come from the installed copy', results.at(-1), {
 })
 
 // 3. re-running is idempotent and reports the version truthfully
-check('repeated setup is idempotent', runSetup(h1, ['setup', '--no-upgrade']), {
-  exit: 0,
-  includes: ['(current, reinstalled)', 'Ready.'],
-})
+check('repeated setup is idempotent', runSetup(h1, ['setup', '--no-upgrade']), ready({
+  includes: ['(current, reinstalled)'],
+}))
 
 // 4. twg already present -> the installer must NOT run.
 // --no-upgrade deliberately: without it this scenario runs `twg upgrade` on the
 // machine of whoever ran the tests, so the day Atlassian ships a new version, running
 // the test suite would silently replace their binary. The assertions below prove what
 // this scenario is for -- that nothing gets installed -- without that side effect.
-check('twg already installed', runSetup(freshHome('twgok'), ['setup', '--no-upgrade']), {
-  exit: 0,
+check('twg already installed', runSetup(freshHome('twgok'), ['setup', '--no-upgrade']), ready({
   includes: ['✓ twg'],
   excludes: ['installing it from Atlassian', '(installed)'],
-})
+}))
 
 // 5. twg missing, auto-install declined -> must fail with the OFFICIAL instructions
 const noTwgEnv = {
@@ -184,9 +222,7 @@ check('non-skill directory in the target path is refused', runSetup(h7, ['setup'
 
 // 8. unrelated skills beside ours are untouched
 const h8 = freshHome('neighbours', { extraSkills: ['twg-jira', 'brandkit', 'some-team-skill'] })
-check('unrelated skills are preserved', runSetup(h8, ['setup', '--no-upgrade']), {
-  exit: 0,
-  includes: ['Ready.'],
+check('unrelated skills are preserved', runSetup(h8, ['setup', '--no-upgrade']), ready({
   also: [() => {
     for (const s of ['twg-jira', 'brandkit', 'some-team-skill']) {
       const f = join(h8, '.claude', 'skills', s, 'SKILL.md')
@@ -195,7 +231,7 @@ check('unrelated skills are preserved', runSetup(h8, ['setup', '--no-upgrade']),
     }
     return null
   }],
-})
+}))
 
 // 9. no harness directory at all -> installing nowhere is NOT success
 check('no harness directory is a failure', runSetup(freshHome('nohome', { claude: false, codex: false }), ['setup', '--no-upgrade']), {
@@ -232,13 +268,49 @@ check('--link refused under npx', runSetup(freshHome('npxlink'), ['setup', '--li
     results.push({ name: 'junction target survives replacement', ok: true, problems: [], out: '' })
     say('PASS  junction target survives replacement (skipped: cannot create links here)')
   } else {
-    check('junction target survives replacement', runSetup(h11, ['setup', '--no-upgrade']), {
-      exit: 0,
+    check('junction target survives replacement', runSetup(h11, ['setup', '--no-upgrade']), ready({
       also: [
         () => (existsSync(join(jtarget, 'canary.txt')) ? null : 'THE JUNCTION TARGET WAS DELETED'),
         () => (lstatSync(link).isSymbolicLink() ? 'the junction was not replaced by a real directory' : null),
       ],
-    })
+    }))
+  }
+}
+
+// 13. twg genuinely missing -> setup installs it with the vendor's own installer.
+//     Opt-in, because it downloads and executes that installer for real.
+if (ALLOW_TWG_INSTALL) {
+  const h13 = freshHome('autoinstall')
+  const installDir = join(work, 'twg-bin')
+
+  // The installer appends `export PATH=...` to the shell profile at $HOME. With the
+  // harness's throwaway HOME that is inert; with a developer's real HOME it would
+  // edit their .zshrc. Assert the isolation rather than documenting it -- a comment
+  // does not stop the run.
+  if (!h13.startsWith(work)) {
+    say('FAIL  twg auto-install (HOME is not isolated; refusing to run)')
+    results.push({ name: 'twg auto-install', ok: false, problems: ['HOME not isolated'], out: '' })
+  } else {
+    // PATH stripped so an installed twg cannot be found, and INSTALL_DIR_OVERRIDE
+    // pointed at the workspace so both the installer and setup's probe agree, and
+    // nothing lands in a real location.
+    const minimalPath = IS_WINDOWS
+      ? [join(process.env.SystemRoot ?? 'C:\\Windows', 'System32'),
+        join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0'),
+        dirname(process.execPath)].join(';')
+      : ['/usr/bin', '/bin', '/usr/sbin', '/sbin', dirname(process.execPath)].join(':')
+
+    const env = { PATH: minimalPath, INSTALL_DIR_OVERRIDE: installDir }
+    if (IS_WINDOWS) { env.Path = minimalPath; env.LOCALAPPDATA = join(work, 'empty-localappdata') }
+
+    check('twg auto-install from Atlassian', runSetup(h13, ['setup'], env), ready({
+      includes: ['twg not found — installing it from Atlassian',
+        'teamwork-graph.atlassian.com/cli/install', '✓ twg', '(installed)', '✓ jira-worklog'],
+      also: [() => {
+        const bin = join(installDir, IS_WINDOWS ? 'twg.exe' : 'twg')
+        return existsSync(bin) ? null : `installer did not produce ${bin}`
+      }],
+    }))
   }
 }
 
