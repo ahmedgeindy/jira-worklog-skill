@@ -395,7 +395,7 @@ This is distributed as a **private repo, not an npm package**, and that is a
 deliberate choice rather than an unfinished step.
 
 ```bash
-git clone git@github.com:ahmedgeindy/jira-worklog-skill.git
+git clone https://github.com/ahmedgeindy/jira-worklog-skill.git
 cd jira-worklog-skill
 npm run setup
 ```
