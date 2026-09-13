@@ -4,6 +4,7 @@ import { renderPsCommand } from './psline.mjs'
 import { weekdayOf, isWorkday } from './tz.mjs'
 
 const FLOOR_SECONDS = 7 * 3600
+const CEILING_SECONDS = 12 * 3600
 // Indent of the command line inside a preview block. The command itself is
 // byte-identical to cmd/emit.mjs's manifest line; only this prefix differs.
 const CMD_INDENT = '      '
@@ -63,6 +64,9 @@ export function render(plan, day, bin) {
       lines.push(`      you already have ${hours(e.existingSecondsOnIssue ?? 0)} on this issue for this day`)
     }
     lines.push(`      comment: ${e.comment}`)
+    if (e.issueVocabMismatch) {
+      lines.push(`      ?? this comment shares no wording with the issue "${e.summary ?? ''}" - is this the right issue?`)
+    }
     for (const ev of e.evidence ?? []) {
       lines.push(`      evidence: ${ev.source} @ ${ev.timestamp} :: ${ev.fragment}`)
     }
@@ -75,6 +79,10 @@ export function render(plan, day, bin) {
     // States the fact and the floor. Never computes what would close the gap,
     // never names an issue to put it on (decision D1a).
     lines.push(`  STATUS: SHORT - this day will hold ${hours(total)}; company policy floor is 7h.`)
+  } else if (total >= CEILING_SECONDS) {
+    // The floor was the only threshold checked here, so a 19h day rendered as
+    // "MEETS the 7h floor" and read as approval. State the number instead.
+    lines.push(`  STATUS: EXCEEDS - this day will hold ${hours(total)}, over the ${hours(CEILING_SECONDS)} plausibility ceiling. VERIFY before approving.`)
   } else {
     lines.push('  STATUS: MEETS the 7h floor')
   }

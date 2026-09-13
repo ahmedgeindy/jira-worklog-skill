@@ -177,7 +177,7 @@ test('validateComment rejects a comment that is secretly ADF', () => {
 test('the SHORT-day breach note does not break grounding or the token check', () => {
   // Decision D1b appends this to the body, so it must survive validateComment.
   const ev = [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Progress' }]
-  const r = validateComment('status: In Progress. logged 5.0h, below the 7h policy floor', ev)
+  const r = validateComment('status: In Progress. at time of logging this day held 5.0h, below the 7h policy floor', ev)
   assert.equal(r.ok, true, r.reason)
 })
 

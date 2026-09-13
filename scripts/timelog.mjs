@@ -3,8 +3,8 @@
 // This file NEVER spawns a worklog write; the agent issues those as its own tool calls.
 // There is no `apply` subcommand and there must never be one — see
 // .superpowers/sdd/2026-09-09-jira-worklog-skill/task-12-brief.md.
-import { readFileSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { dirname, resolve, join } from 'node:path'
 import { runPlan } from './cmd/plan.mjs'
 import { emitManifest } from './cmd/emit.mjs'
 import { checkCmd, checkWrite, fileTokenStore } from './cmd/guard.mjs'
@@ -27,7 +27,9 @@ function resolveIssue(key) {
   assertTrustworthy(res, `workitem get ${key}`)
   const d = Array.isArray(res.data) ? res.data[0] : res.data
   if (!d?.id) throw new Error(`HARD STOP: cannot resolve ${key} (nonexistent or no permission)`)
-  return { key, numericId: String(d.id), site: new URL(d.url).host }
+  // summary feeds the issue-mismatch warning in cmd/plan.mjs. Absent is fine —
+  // the check simply does not fire — but it must never be invented.
+  return { key, numericId: String(d.id), site: new URL(d.url).host, summary: d.summary ?? null }
 }
 
 /**
@@ -79,7 +81,86 @@ function tokenStoreForPlan() {
   return fileTokenStore(dirname(resolve(arg('plan', 'worklog-plan.json'))))
 }
 
-if (cmd === 'plan') {
+/**
+ * Manifest mode: one plan file per day, each with its own planHash.
+ *
+ * `plan --date a,b,c` applies the SAME entry lines to every date, so a backfill
+ * where each day has its own comment needed one invocation per day (a real run
+ * did 31). Manifest mode takes `YYYY-MM-DD<TAB><entry line>` on stdin and
+ * groups by date.
+ *
+ * It does NOT widen decision D4. D4 caps one APPROVAL at 5 days; here each day
+ * is planned separately and carries its own hash, so one approval still covers
+ * exactly one day. Only generation is batched — every gate, guard and write is
+ * unchanged and still per-day.
+ */
+const MANIFEST_MAX_DAYS = 31
+
+function runManifest() {
+  const raw = readFileSync(0, 'utf8').split('\n').map((s) => s.replace(/\s+$/, '')).filter((s) => s.trim())
+  const byDate = new Map()
+  for (const [i, row] of raw.entries()) {
+    const m = /^(\d{4}-\d{2}-\d{2})[\t ]+(.*)$/.exec(row)
+    if (!m) {
+      process.stderr.write(
+        `PLAN REFUSED: manifest line ${i + 1} is not "<YYYY-MM-DD><TAB><entry line>": ${JSON.stringify(row)}\n\n` +
+        'Nothing was written. No plan file was created.\n',
+      )
+      process.exit(2)
+    }
+    if (!byDate.has(m[1])) byDate.set(m[1], [])
+    byDate.get(m[1]).push(m[2].trim())
+  }
+
+  const dates = [...byDate.keys()].sort()
+  if (dates.length > MANIFEST_MAX_DAYS) {
+    process.stderr.write(`PLAN REFUSED: manifest names ${dates.length} days; max ${MANIFEST_MAX_DAYS} per run.\n\nNothing was written.\n`)
+    process.exit(2)
+  }
+
+  const outDir = arg('out-dir')
+  if (!outDir) {
+    process.stderr.write('PLAN REFUSED: --out-dir is required in manifest mode (one plan file per day).\n\nNothing was written.\n')
+    process.exit(2)
+  }
+  mkdirSync(resolve(outDir), { recursive: true })
+
+  const bin = locateTwg()
+  const summary = []
+  for (const date of dates) {
+    let plan
+    try {
+      plan = runPlan({ lines: byDate.get(date), isoDate: [date], deps: LIVE_DEPS })
+    } catch (e) {
+      process.stderr.write(
+        `PLAN REFUSED on ${date}: ${e.message}\n\n` +
+        `${summary.length} earlier day(s) were written to ${outDir}; ${date} and everything after it were not.\n`,
+      )
+      process.exit(2)
+    }
+    const out = join(resolve(outDir), `${date}.json`)
+    const blocks = renderThenPersist(plan, bin, () => writeFileSync(out, JSON.stringify(plan, null, 2)))
+    for (const block of blocks) process.stdout.write(`${block}\n\n`)
+    const d = plan.days[0]
+    summary.push({ date, hash: plan.planHash, entries: d.entries.length, status: d.status })
+  }
+
+  // Scope, printed AFTER every preview so it is the last thing on screen: the
+  // human is approving N separate days, and SKILL.md requires the full scope
+  // before the first gate.
+  process.stdout.write(`SCOPE: ${summary.length} days, ${summary.reduce((a, s) => a + s.entries, 0)} writes, plan files in ${outDir}\n`)
+  for (const s of summary) {
+    process.stdout.write(`  ${s.date}  ${String(s.entries).padStart(2)} entr${s.entries === 1 ? 'y' : 'ies'}  ${s.status.padEnd(7)} --expect-hash ${s.hash}\n`)
+  }
+  const exceeds = summary.filter((s) => s.status === 'EXCEEDS')
+  if (exceeds.length) {
+    process.stdout.write(`\n  ${exceeds.length} day(s) EXCEED the plausibility ceiling: ${exceeds.map((s) => s.date).join(', ')}\n`)
+  }
+}
+
+if (cmd === 'plan' && process.argv.includes('--manifest')) {
+  runManifest()
+} else if (cmd === 'plan') {
   const lines = readFileSync(0, 'utf8').split('\n').map((s) => s.trim()).filter(Boolean)
   const dates = String(arg('date')).split(',').map((s) => s.trim())
   // Every refusal in runPlan is a DECISION the operator has to act on - a
