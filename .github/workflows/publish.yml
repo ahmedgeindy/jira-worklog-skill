@@ -33,7 +33,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           # Trusted publishing requires Node >= 22.14.0 and npm >= 11.5.1.
-          node-version: '22.14.0'
+          #
+          # Pinned to the 22 LINE, not to 22.14.0 exactly. Pinning the exact floor
+          # broke this workflow the first time it ran: npm@latest is 12.x and
+          # declares {"node":"^22.22.2 || ^24.15.0 || >=26.0.0"}, so installing it
+          # on 22.14.0 died with EBADENGINE. The minimum that satisfies trusted
+          # publishing is not the minimum that can install a current npm.
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Upgrade npm to a version that can publish via OIDC
@@ -41,6 +47,28 @@ jobs:
         run: |
           npm install -g npm@latest
           npm --version
+
+      - name: npm must be new enough for trusted publishing
+        # Checked rather than assumed. If a future runner image or engine
+        # constraint leaves npm below 11.5.1, `npm publish` would silently fall
+        # back to looking for a token it will not find, and fail at the last step
+        # with a confusing auth error instead of here with a clear one.
+        run: |
+          NPM_V="$(npm --version)"
+          node -e '
+            const [have] = process.argv.slice(1)
+            const need = "11.5.1"
+            const cmp = (a, b) => {
+              const pa = a.split(".").map(Number), pb = b.split(".").map(Number)
+              for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i]
+              return 0
+            }
+            if (cmp(have, need) < 0) {
+              console.error(`::error::npm ${have} cannot publish via OIDC; need >= ${need}`)
+              process.exit(1)
+            }
+            console.log(`npm ${have} >= ${need}`)
+          ' "$NPM_V"
 
       # No `npm ci`: this package has zero dependencies and ships no lockfile, so
       # `npm ci` would fail on the missing lockfile rather than install nothing.
