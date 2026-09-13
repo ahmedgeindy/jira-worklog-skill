@@ -26,33 +26,77 @@ npm test          # 264 tests, no network, no Jira access needed
 
 ## Install
 
+One command, on a fresh machine:
+
 ```bash
-npm run setup
+npx <package-name> setup
 ```
 
-That is the whole thing. It does four steps and stops on the first one it cannot
-verify:
+```
+  ✓ Node.js        v22.14.0
+  ✓ npm            v11.5.1
+  ✓ twg            v1.2.8 (current)
+  ✓ Jira sign-in   Your Name
+  ✓ dependencies   none required (zero runtime dependencies)
+  ✓ jira-worklog   installed to 2 locations
+  ✓ verification   264 tests pass from the installed copy
 
-| Step | What it does | If it can't |
-|---|---|---|
-| 1 | checks Node >= 18 | fails |
-| 2 | finds `twg`, then runs `twg upgrade` to self-update it | prints Atlassian's install page and exits 2 — **it will never download an installer for you** |
-| 3 | runs `twg whoami` | FAILs, quoting twg's own error and its own fix command |
-| 4 | copies the skill into every harness dir that exists on this machine | fails, and never overwrites a directory that isn't this skill |
+Ready.
+```
 
-| Harness | Where it lands |
+Each line can only appear by actually being true — `Jira sign-in` runs `twg whoami`,
+and `verification` runs the installed copy's own test suite. Any check that fails
+prints `✗`, says what to run, and exits 2; nothing later is reported as fine.
+
+From a clone instead of npm:
+
+```bash
+git clone https://github.com/ahmedgeindy/jira-worklog-skill.git
+cd jira-worklog-skill
+npm run setup       # same thing
+```
+
+| Harness | Where the skill lands |
 |---|---|
 | Claude Code | `~/.claude/skills/jira-worklog/` |
 | Codex CLI | `~/.codex/skills/jira-worklog/` |
 
-A harness whose config dir doesn't exist is skipped with a `SKIP` line, not an error.
+A harness whose config directory does not exist is skipped with a `-` line. If
+*neither* exists, that is a failure — installing nowhere is not success.
 
-Flags: `--link` makes a junction/symlink instead of a copy (live edits, for people
-working *on* the skill), `--no-upgrade` leaves `twg` alone, `--force` overwrites a
-target that isn't ours.
+**Flags:** `--install-twg` installs twg with Atlassian's documented installer when
+it is missing; `--no-upgrade` leaves twg alone; `--link` symlinks instead of copying
+(clones only — it is refused under `npx`, where the source is a cache npm prunes);
+`--force` replaces a directory that is not this skill.
 
-**Re-running is safe** — it is idempotent, and it refuses rather than clobbering a
+**Re-running is safe.** It is idempotent and refuses rather than clobbering a
 directory it did not install.
+
+### If twg is missing
+
+twg is a standalone binary and is **not** on npm — it needs no Node at all. Setup
+will not download it for you unless you pass `--install-twg`; otherwise it prints
+Atlassian's own documented commands and stops:
+
+```bash
+# macOS / Linux
+curl -fsSL --retry 2 https://teamwork-graph.atlassian.com/cli/install | bash
+
+# Windows
+curl.exe -fsSL https://teamwork-graph.atlassian.com/cli/install.ps1 -o twg-install.ps1
+powershell -ExecutionPolicy Bypass -File .	wg-install.ps1
+```
+
+Docs: <https://developer.atlassian.com/platform/teamwork-graph/twg-cli/getting-started/installation/>
+
+### If you are not signed in to Jira
+
+Setup fails that check and quotes twg's own error and its own fix — not a guess:
+
+```
+  ✗ Jira sign-in  You're not signed in. Run `twg login --force` to authenticate...
+      run:  twg login --force
+```
 
 ### One check setup cannot do for you
 
@@ -309,7 +353,7 @@ repeated line:
 
 ```
 HCFM-223 1h   @11:00 :: daily standup
-HCFM-223 2.5h @13:00 :: STC-BH data-bug investigation
+HCFM-223 2.5h @13:00 :: data-bug investigation
 ```
 
 ### Several work items across several days
@@ -389,38 +433,29 @@ That last one is a warning, not a block — you decide.
 - **The work week is configurable per site.** This skill assumes Sunday–Thursday; if yours is
   Monday–Friday, change it before your first run or it will fabricate and skip the wrong days.
 
-## Sharing this with your team
+## Distribution
 
-This is distributed as a **private repo, not an npm package**, and that is a
-deliberate choice rather than an unfinished step.
+GitHub is the source of truth; npm is the delivery channel. Releases are cut from a
+tag and published by `.github/workflows/publish.yml` using npm trusted publishing
+(OIDC) — there is no publish token in this repository.
+
+**Not published yet.** `package.json` still carries `"private": true`, which makes
+`npm publish` refuse. That is a deliberate catch, not an oversight: see
+[RELEASING.md](RELEASING.md) for the first-release procedure, which cannot be
+automated because npm will not configure a trusted publisher for a package that does
+not exist yet.
+
+Before any release, two gates run against the tarball that would actually ship:
 
 ```bash
-git clone https://github.com/ahmedgeindy/jira-worklog-skill.git
-cd jira-worklog-skill
-npm run setup
+npm run audit:selftest   # plants a credential and requires the scanner to catch it
+npm run audit            # scans the real packed tarball, not the working tree
+npm run audit:public     # stricter, for a public package
 ```
 
-Or in one line, for anyone who already has access to the repo:
-
-```bash
-npx github:ahmedgeindy/jira-worklog-skill
-```
-
-`package.json` carries `"private": true`, which makes `npm publish` refuse. Leave
-it there. Two reasons this is not on a public registry:
-
-1. **It names internal things.** The Jira site hostname appears in `SKILL.md`, the
-   references and three tests, and real issue keys appear throughout. None of that
-   is harmful to the team; all of it is needless disclosure outside it.
-2. **A test fixture used to carry a colleague's data.** It was a raw
-   `worklog query` capture with a real person's name, Jira accountId and timezone,
-   and their worklog comments — which named a customer and described that
-   customer's network incident. That is redacted now, but the original blob is
-   still in git history. A private repo makes that a non-issue; publishing would
-   not.
-
-If this ever should go public, both of the above need dealing with first, history
-included. Redacting only the tip is not enough.
+The audit exists because a one-time manual check does not survive a second release.
+It has already caught one real leak: a test fixture that was a raw `worklog query`
+capture carrying a colleague's Jira identity and a customer's incident description.
 
 ## Layout
 
@@ -433,6 +468,7 @@ scripts/setup.mjs                 `npm run setup` - verify twg, self-update it, 
 scripts/timelog.mjs               CLI: plan / emit / check-cmd / check-write / verify
 scripts/lib/                      tz, urls, twg, twgstatus, identity, daytotal, dedup, evidence, plan, preview
 scripts/test/                     264 tests
+tools/                            release gates: package-content audit + its own tests (NOT shipped)
 ```
 
 ## Reading the commit history

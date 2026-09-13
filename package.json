@@ -5,11 +5,14 @@
   "description": "Agent skill for logging time to Jira through the twg CLI, with a human gate and guarded writes",
   "type": "module",
   "bin": {
-    "jira-worklog-skill": "scripts/setup.mjs"
+    "jira-worklog": "scripts/setup.mjs"
   },
   "scripts": {
     "setup": "node scripts/setup.mjs",
-    "test": "node --test \"scripts/test/*.test.mjs\""
+    "test": "node --test \"scripts/test/*.test.mjs\" \"tools/*.test.mjs\"",
+    "audit": "node tools/audit-package.mjs",
+    "audit:public": "node tools/audit-package.mjs --public",
+    "audit:selftest": "node tools/audit-package.mjs --self-test"
   },
   "files": [
     "SKILL.md",
@@ -20,5 +23,24 @@
   "engines": {
     "node": ">=18"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ahmedgeindy/jira-worklog-skill.git"
+  },
+  "homepage": "https://github.com/ahmedgeindy/jira-worklog-skill#readme",
+  "bugs": {
+    "url": "https://github.com/ahmedgeindy/jira-worklog-skill/issues"
+  },
+  "keywords": [
+    "jira",
+    "worklog",
+    "timesheet",
+    "time-tracking",
+    "agent-skill",
+    "claude-code",
+    "codex",
+    "twg",
+    "atlassian"
+  ]
 }
