@@ -1,0 +1,4 @@
+node_modules/
+worklog-plan.json
+plans/
+.jira-worklog-approved-*
