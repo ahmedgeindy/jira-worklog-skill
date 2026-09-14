@@ -4,6 +4,7 @@ import { existsSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { emitManifest } from './emit.mjs'
 import { classify } from '../lib/dedup.mjs'
+import { ceilingVerdict } from '../lib/capacity.mjs'
 
 /**
  * Real, on-disk approval-token store (Ruling 2: guard-bypass detection).
@@ -96,6 +97,63 @@ export function checkCmd({ plan, date, cmd, deps }) {
   // that must pass so the human can approve it in the preview.
   if (state !== planned.dedupeState) {
     return { ok: false, entry, reason: `drift since plan time: was ${planned.dedupeState}, now ${state} (possible duplicate) — stop this day` }
+  }
+
+  // ---- Month progress ceiling, re-checked against the LIVE month ----
+  //
+  // cmd/plan.mjs evaluated the ceiling when the plan was built. That is not the
+  // same as the moment of the write: between the human's approval and this line
+  // the month can move -- time entered in the Jira UI, a second session, or the
+  // earlier entries of this very plan landing one by one. A plan approved at
+  // 100% can still be written past 105% if nothing looks again. This is the last
+  // point before a write where looking is still possible.
+  //
+  // Capacity comes from the plan's FROZEN months block, not recomputed here: it
+  // is what the human approved, it is inside planHash, and a capacity recomputed
+  // at write time would silently GROW as the month advances -- loosening the
+  // ceiling exactly when the write is closest to happening. Frozen is the strict
+  // direction and the auditable one.
+  if (typeof deps.monthTotal !== 'function') {
+    throw new Error(
+      'checkCmd requires deps.monthTotal: the progress ceiling cannot be re-checked against the live ' +
+      'month without it, and silently skipping it would let an approved plan be written past the ceiling.',
+    )
+  }
+  const ym = String(date).slice(0, 7)
+  const frozen = (plan.months ?? []).find((m) => m.month === ym)
+  if (!frozen) {
+    return {
+      ok: false, entry,
+      reason: `this plan carries no month block for ${ym}, so the progress ceiling cannot be re-checked — refusing. Re-run plan.`,
+    }
+  }
+  const live = deps.monthTotal({
+    zone: plan.zone, accountId: plan.accountId,
+    fromIso: frozen.from, toIso: frozen.to, extraKeys: [planned.key],
+  })
+  if (live.status !== 'OK') {
+    return {
+      ok: false, entry,
+      reason: `UNKNOWN month-to-date total for ${ym}: ${live.reason} — refusing to write against an unverified number`,
+    }
+  }
+  const verdict = ceilingVerdict({
+    loggedSeconds: live.seconds,
+    plannedSeconds: Number(planned.seconds),
+    capacitySeconds: frozen.capacitySeconds,
+    ceilingPercent: frozen.ceilingPercent,
+  })
+  if (!verdict.ok) {
+    return {
+      ok: false, entry,
+      reason:
+        `PROGRESS CEILING at write time: ${verdict.reason}. ` +
+        `The month now holds ${(live.seconds / 3600).toFixed(2)}h; this write of ` +
+        `${(Number(planned.seconds) / 3600).toFixed(2)}h would make it ${(verdict.total / 3600).toFixed(2)}h ` +
+        `against a ${(frozen.capacitySeconds / 3600).toFixed(2)}h capacity (ceiling ` +
+        `${(verdict.ceilingSeconds / 3600).toFixed(2)}h). The month moved since this plan was approved — ` +
+        'stop this day and re-run plan.',
+    }
   }
 
   tokens.put(entry.fingerprint)

@@ -11,9 +11,20 @@ import { hashPlan } from '../lib/plan.mjs'
 const ME = 'me-1'
 const BIN = 'C:/twg/twg.exe'
 
+// A month total low enough that the write-time ceiling re-check is never what
+// these tests trip over; the ceiling has its own suite. Capacity below is 6
+// workdays x 8h = 48h, so 7h of writes sits around 15%.
+const LOW_MONTH = () => ({ seconds: 0, status: 'OK', reason: '', countedWorklogIds: [], candidates: [] })
+
 function makePlan(over = {}) {
   const p = {
     accountId: ME, zone: 'Asia/Riyadh',
+    months: [{
+      month: '2026-09', from: '2026-09-01', to: '2026-09-08',
+      loggedSeconds: 0, plannedSeconds: 25200, capacitySeconds: 6 * 8 * 3600,
+      capacityOverridden: false, hoursPerDay: 8, ceilingPercent: 105,
+      percent: 14.58, explain: ['  MONTH 2026-09: capacity 48.00h'],
+    }],
     days: [{
       date: '2026-09-08', existingSeconds: 0, status: 'MEETS',
       entries: [{
@@ -87,7 +98,7 @@ test('check-cmd accepts the byte-identical line and leaves an approval token', (
   const p = makePlan()
   const [row] = emitManifest(p, '2026-09-08', BIN)
   const tokens = makeTokenStore()
-  const deps = { checkWindow: () => [], bin: BIN, tokens }
+  const deps = { checkWindow: () => [], monthTotal: LOW_MONTH, bin: BIN, tokens }
   const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
   assert.equal(r.ok, true)
   assert.equal(tokens.has('abc123'), true)
@@ -98,7 +109,7 @@ test('check-cmd REJECTS a line that drifted by one character, and leaves no toke
   const [row] = emitManifest(p, '2026-09-08', BIN)
   const tampered = row.command.replace("'25200'", "'28800'")
   const tokens = makeTokenStore()
-  const deps = { checkWindow: () => [], bin: BIN, tokens }
+  const deps = { checkWindow: () => [], monthTotal: LOW_MONTH, bin: BIN, tokens }
   const r = checkCmd({ plan: p, date: '2026-09-08', cmd: tampered, deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /does not match the manifest/i)
@@ -109,7 +120,7 @@ test('check-cmd REJECTS when the server drifted since plan time, and leaves no t
   const p = makePlan()
   const [row] = emitManifest(p, '2026-09-08', BIN)
   const tokens = makeTokenStore()
-  const deps = { bin: BIN, checkWindow: () => [{ author: { accountId: ME }, timeSpentSeconds: 25200 }], tokens }
+  const deps = { bin: BIN, checkWindow: () => [{ author: { accountId: ME }, timeSpentSeconds: 25200 }], monthTotal: LOW_MONTH, tokens }
   const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /drift/i)
@@ -132,7 +143,7 @@ test('checkCmd: plan-time DUPLICATE + live DUPLICATE still fails (regression)', 
   const [row] = emitManifest(p, '2026-09-08', BIN)
   const tokens = makeTokenStore()
   // Same accountId + same seconds as the plan -> classify() returns DUPLICATE.
-  const deps = { checkWindow: () => [{ author: { accountId: ME }, timeSpentSeconds: 25200 }], bin: BIN, tokens }
+  const deps = { checkWindow: () => [{ author: { accountId: ME }, timeSpentSeconds: 25200 }], monthTotal: LOW_MONTH, bin: BIN, tokens }
   const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /DUPLICATE/)
@@ -145,7 +156,7 @@ test('checkCmd: plan-time AMBIGUOUS + live AMBIGUOUS still fails', () => {
   const [row] = emitManifest(p, '2026-09-08', BIN)
   const tokens = makeTokenStore()
   // A row with no author.accountId at all -> classify() returns AMBIGUOUS.
-  const deps = { checkWindow: () => [{ timeSpentSeconds: 999 }], bin: BIN, tokens }
+  const deps = { checkWindow: () => [{ timeSpentSeconds: 999 }], monthTotal: LOW_MONTH, bin: BIN, tokens }
   const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
   assert.equal(r.ok, false)
   assert.match(r.reason, /AMBIGUOUS/)
@@ -162,6 +173,7 @@ test('checkCmd: plan-time EXISTING + live EXISTING passes (top-up flow, regressi
   // must pass rather than being blocked as drift or as a duplicate.
   const deps = {
     checkWindow: () => [{ author: { accountId: ME }, timeSpentSeconds: 3600, comment: {} }],
+    monthTotal: LOW_MONTH,
     bin: BIN, tokens,
   }
   const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
@@ -173,7 +185,7 @@ test('checkCmd: CLEAR passes', () => {
   const p = makePlan({ dedupeState: 'CLEAR' })
   const [row] = emitManifest(p, '2026-09-08', BIN)
   const tokens = makeTokenStore()
-  const deps = { checkWindow: () => [], bin: BIN, tokens }
+  const deps = { checkWindow: () => [], monthTotal: LOW_MONTH, bin: BIN, tokens }
   const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
   assert.equal(r.ok, true)
   assert.equal(tokens.has('abc123'), true)
@@ -260,7 +272,7 @@ test('the realistic flow: check-cmd running first leaves the token check-write n
   const [row] = emitManifest(p, '2026-09-08', BIN)
   const tokens = makeTokenStore()
 
-  const cc = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps: { checkWindow: () => [], bin: BIN, tokens } })
+  const cc = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps: { checkWindow: () => [], monthTotal: LOW_MONTH, bin: BIN, tokens } })
   assert.equal(cc.ok, true)
 
   const r = checkWrite({
@@ -444,4 +456,120 @@ test('fileTokenStore puts, checks and consumes a real approval-token file', () =
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+// ---------------------------------------------------------------------------
+// The progress ceiling, re-checked at WRITE time.
+//
+// cmd/plan.mjs evaluates the ceiling when the plan is built. Between the human
+// approving it and the write actually happening, the month can move: time typed
+// into the Jira UI, a second session, or the earlier entries of this same plan
+// landing one at a time. Without this, a plan approved at 100% can be written
+// past 105% and nothing ever looks again.
+// ---------------------------------------------------------------------------
+
+test('checkCmd REFUSES when the month moved past the ceiling since plan time', () => {
+  const p = makePlan()
+  const [row] = emitManifest(p, '2026-09-08', BIN)
+  const tokens = makeTokenStore()
+  // The plan froze capacity at 48h, so the ceiling is 50.4h. The month now holds
+  // 48h and this write adds 7h: 55h, over.
+  const deps = {
+    checkWindow: () => [], bin: BIN, tokens,
+    monthTotal: () => ({ seconds: 48 * 3600, status: 'OK', reason: '', countedWorklogIds: [], candidates: [] }),
+  }
+  const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /PROGRESS CEILING at write time/)
+  assert.match(r.reason, /month moved since this plan was approved/)
+  assert.equal(tokens.has('abc123'), false, 'no approval token may be issued for a refused write')
+})
+
+test('the write-time refusal states the live number, the write, and the ceiling', () => {
+  const p = makePlan()
+  const [row] = emitManifest(p, '2026-09-08', BIN)
+  const deps = {
+    checkWindow: () => [], bin: BIN, tokens: makeTokenStore(),
+    monthTotal: () => ({ seconds: 48 * 3600, status: 'OK', reason: '', countedWorklogIds: [], candidates: [] }),
+  }
+  const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
+  assert.match(r.reason, /month now holds 48\.00h/)
+  assert.match(r.reason, /this write of 7\.00h/)
+  assert.match(r.reason, /would make it 55\.00h/)
+  assert.match(r.reason, /48\.00h capacity/)
+  assert.match(r.reason, /ceiling 50\.40h/)
+})
+
+test('an UNKNOWN live month refuses the write rather than reading as zero', () => {
+  // A false zero here would clear the ceiling for every write that follows.
+  const p = makePlan()
+  const [row] = emitManifest(p, '2026-09-08', BIN)
+  const tokens = makeTokenStore()
+  const deps = {
+    checkWindow: () => [], bin: BIN, tokens,
+    monthTotal: () => ({ seconds: 0, status: 'UNKNOWN', reason: 'author-filtered sum is 0', countedWorklogIds: [], candidates: [] }),
+  }
+  const r = checkCmd({ plan: p, date: '2026-09-08', cmd: row.command, deps })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /UNKNOWN month-to-date total for 2026-09/)
+  assert.equal(tokens.has('abc123'), false)
+})
+
+test('a missing deps.monthTotal throws rather than skipping the write-time ceiling', () => {
+  const p = makePlan()
+  const [row] = emitManifest(p, '2026-09-08', BIN)
+  assert.throws(
+    () => checkCmd({
+      plan: p, date: '2026-09-08', cmd: row.command,
+      deps: { checkWindow: () => [], bin: BIN, tokens: makeTokenStore() },
+    }),
+    /checkCmd requires deps\.monthTotal/,
+  )
+})
+
+test('a plan with no month block for that date is refused, not waved through', () => {
+  const p = makePlan()
+  p.months = [] // a hand-built or truncated plan
+  const [row] = emitManifest(p, '2026-09-08', BIN)
+  const r = checkCmd({
+    plan: p, date: '2026-09-08', cmd: row.command,
+    deps: { checkWindow: () => [], bin: BIN, tokens: makeTokenStore(), monthTotal: LOW_MONTH },
+  })
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /no month block for 2026-09/)
+})
+
+test('capacity is taken FROZEN from the plan, never recomputed at write time', () => {
+  // A capacity recomputed here would GROW as the month advances, loosening the
+  // ceiling exactly when the write is closest to happening. The plan froze 48h,
+  // so this must still be 48h.
+  const p = makePlan()
+  const [row] = emitManifest(p, '2026-09-08', BIN)
+  const r = checkCmd({
+    plan: p, date: '2026-09-08', cmd: row.command,
+    deps: {
+      checkWindow: () => [], bin: BIN, tokens: makeTokenStore(),
+      monthTotal: () => ({ seconds: 44 * 3600, status: 'OK', reason: '', countedWorklogIds: [], candidates: [] }),
+    },
+  })
+  // 44 + 7 = 51h. Against the frozen 48h capacity the ceiling is 50.4h, so this
+  // refuses. Against a full-month 176h capacity it would pass -- that is the bug.
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /48\.00h capacity/)
+})
+
+test('a write that keeps the month under the ceiling still passes', () => {
+  // The rail must not simply always refuse.
+  const p = makePlan()
+  const [row] = emitManifest(p, '2026-09-08', BIN)
+  const tokens = makeTokenStore()
+  const r = checkCmd({
+    plan: p, date: '2026-09-08', cmd: row.command,
+    deps: {
+      checkWindow: () => [], bin: BIN, tokens,
+      monthTotal: () => ({ seconds: 40 * 3600, status: 'OK', reason: '', countedWorklogIds: [], candidates: [] }),
+    },
+  })
+  assert.equal(r.ok, true, '40 + 7 = 47h against a 50.4h ceiling')
+  assert.equal(tokens.has('abc123'), true)
 })
