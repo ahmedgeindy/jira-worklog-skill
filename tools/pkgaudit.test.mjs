@@ -32,6 +32,18 @@ const CLOUD_UUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 // The org name IS the thing internal-host and internal-org match, so it cannot be
 // swapped for a placeholder without the test ceasing to test anything. Assembled
 // at runtime for the same reason as the specimens above.
+// Internal issue keys, assembled for the same reason as everything above: the
+// repository history was rewritten to purge these strings, and a literal here
+// would have been rewritten with it -- silently turning a positive control into
+// a test that proves nothing. The RULES in pkgaudit.mjs still hold the literal
+// patterns, because a detector cannot detect a string it does not contain; that
+// file is the one place these belong.
+const KEY_HCFM = (n) => `HC${'FM'}-${n}`
+const KEY_HIVEDEV = (n) => `HIVE${'DEV'}-${n}`
+const SHIPPED_UNDER_CLEAN = [
+  KEY_HIVEDEV(3234), `CX${'OPS'}-17`, `CX${'OPS'}-1`,
+  `K2${'227759'}-141`, `U2${'633237'}-39`, `EAK2${'1GEOO'}-281`,
+]
 const ORG = `ist${'networks'}`
 const INTERNAL_HOST = `${ORG}-dev.atlassian.net`
 const INTERNAL_EMAIL = `a.person@${ORG}.com`
@@ -104,7 +116,7 @@ test('the strings removed in the public scrub are all detectable', () => {
   const sev = { severities: ['secret', 'pii', 'internal', 'org'] }
   assert.ok(ids(`https://${INTERNAL_HOST}/browse/X-1`, sev).includes('internal-host'))
   assert.ok(ids(`the ${ORG} tenant`, sev).includes('internal-org'))
-  assert.ok(ids('logged 2h on PROJ-223', sev).includes('internal-issue-key'))
+  assert.ok(ids(`logged 2h on ${KEY_HCFM(223)}`, sev).includes('internal-issue-key'))
   assert.ok(ids('the HiveCFM migrator', sev).includes('internal-product'))
   assert.ok(ids('hive-cfm core', sev).includes('internal-product'))
   assert.ok(ids('source DB ISTServiceEdge', sev).includes('internal-product'))
@@ -116,10 +128,10 @@ test('an issue key is caught even without a word boundary before it', () => {
   // and 'key%3DPROJ-999' the preceding character is a word character, so no boundary
   // exists. Two checks sharing one assumption are one check.
   const sev = { severities: ['org'] }
-  assert.ok(ids('\\tPROJ-223 7.5h', sev).includes('internal-issue-key'), 'after \\t escape')
-  assert.ok(ids('?jql=key%3DPROJ-999', sev).includes('internal-issue-key'), 'after %3D')
-  assert.ok(ids('xPROJ-1', sev).includes('internal-issue-key'), 'glued to a letter')
-  assert.ok(ids('see PROJ-42 please', sev).includes('internal-issue-key'), 'lowercase')
+  assert.ok(ids(`\\t${KEY_HCFM(223)} 7.5h`, sev).includes('internal-issue-key'), 'after \\t escape')
+  assert.ok(ids(`?jql=key%3D${KEY_HCFM(999)}`, sev).includes('internal-issue-key'), 'after %3D')
+  assert.ok(ids(`x${KEY_HCFM(1)}`, sev).includes('internal-issue-key'), 'glued to a letter')
+  assert.ok(ids(`see ${KEY_HCFM(42).toLowerCase()} please`, sev).includes('internal-issue-key'), 'lowercase')
 })
 
 test('the synthetic replacements the scrub introduced are clean', () => {
@@ -131,7 +143,7 @@ test('the synthetic replacements the scrub introduced are clean', () => {
 })
 
 test('org-identifying strings are found but are NOT reported in private mode', () => {
-  const text = `https://${INTERNAL_HOST}/browse/PROJ-223 :: STC-BH sync`
+  const text = `https://${INTERNAL_HOST}/browse/${KEY_HCFM(223)} :: ST${'C-BH'} sync`
   const priv = ids(text, { severities: ['secret', 'pii', 'internal'] })
   assert.deepEqual(priv, [], 'private mode must not flag org strings')
 
@@ -214,7 +226,7 @@ test('an issue key with an unrecognised prefix is caught', () => {
 test('the specific prefixes that shipped under a CLEAN verdict are all caught now', () => {
   // Each of these sat in a shipped file while the audit reported no org strings.
   const sev = { severities: ['org'] }
-  for (const key of ['PROJ-3234', 'PROJ-17', 'PROJ-1', 'PROJ-141', 'PROJ-39', 'PROJ-281']) {
+  for (const key of SHIPPED_UNDER_CLEAN) {
     const found = ids(`worklog query --issue-id ${key}`, sev)
     assert.ok(
       found.includes('unknown-issue-key') || found.includes('internal-issue-key'),
@@ -251,9 +263,9 @@ test('a key inside a character class is not read as an issue key', () => {
 
 test('the widened internal-issue-key rule covers HIVEDEV as well as HCFM', () => {
   const sev = { severities: ['org'] }
-  assert.ok(ids('PROJ-223', sev).includes('internal-issue-key'))
-  assert.ok(ids('PROJ-3234', sev).includes('internal-issue-key'))
+  assert.ok(ids(KEY_HCFM(223), sev).includes('internal-issue-key'))
+  assert.ok(ids(KEY_HIVEDEV(3234), sev).includes('internal-issue-key'))
   // and still with no word-boundary anchor, which was the SECOND false green
-  assert.ok(ids('\tPROJ-223', sev).includes('internal-issue-key'))
-  assert.ok(ids('key%3DPROJ-3234', sev).includes('internal-issue-key'))
+  assert.ok(ids(`\t${KEY_HCFM(223)}`, sev).includes('internal-issue-key'))
+  assert.ok(ids(`key%3D${KEY_HIVEDEV(3234)}`, sev).includes('internal-issue-key'))
 })
