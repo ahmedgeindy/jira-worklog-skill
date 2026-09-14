@@ -19,8 +19,12 @@ const GITHUB_TOKEN = `gh${'p'}_abcdefghijklmnopqrstuvwxyz0123456789`
 const NPM_TOKEN = `npm${'_'}abcdefghijklmnopqrstuvwxyz0123456789`
 const AWS_KEY = `AKIA${'IOSFODNN7'}EXAMPLE`
 const AWS_KEY_2 = `AKIA${'IOSFODNN7'}EXAMPLB`
-const PRIVATE_KEY_HEADER = `-----BEGIN ${'RSA'} PRIVATE KEY-----`
-const BEARER = `Bearer ${'TESTVECTOR_REDACTED'}.abcdefghijkl`
+const PRIVATE_KEY_HEADER = `-----BEGIN ${'RSA'} PRIVATE ${'KEY'}-----`
+// eyJhbGci... is only the base64 of {"alg":"HS256"} -- a public JWT HEADER with
+// no payload and no signature, so not a credential in any sense. Split anyway:
+// GitHub secret scanning and DLP tools match the prefix, and a permanent stream
+// of triage-and-dismiss is its own cost.
+const BEARER = `Bearer ${'eyJhbGci'}${'OiJIUzI1NiJ9'}.abcdefghijkl`
 const CLIENT_SECRET_LINE = `"client${'_'}secret": "TESTVECTOR_REDACTED"`
 const PASSWORD_LINE = `pass${'word'}=TESTVECTOR_REDACTED`
 
