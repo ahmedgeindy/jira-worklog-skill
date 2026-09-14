@@ -111,3 +111,33 @@ export function renderThenPersist(plan, bin, persist) {
   persist()
   return blocks
 }
+
+/**
+ * The month-to-date progress block, printed once after every day's gate.
+ *
+ * A plan that reaches this point is already UNDER the ceiling - cmd/plan.mjs
+ * refuses above it - so this block is not a warning, it is the arithmetic behind
+ * a number the human is about to make true. It exists because "105%" in this
+ * tool and "105%" on the company dashboard are only the same number if the
+ * capacity model matches, and the model here (Sun-Thu workdays x 8h, or an
+ * operator override) cannot see leave or a mid-month start. Printing the model
+ * makes a mismatch visible instead of silent.
+ */
+export function renderMonths(plan) {
+  const months = plan.months ?? []
+  if (months.length === 0) {
+    // Never render an empty, reassuring block. A plan without a month section
+    // was produced by something that did not run the ceiling check.
+    return 'MONTH PROGRESS: not evaluated for this plan.'
+  }
+  const lines = ['MONTH-TO-DATE PROGRESS']
+  for (const m of months) {
+    lines.push(...m.explain)
+    const headroom = (m.capacitySeconds * m.ceilingPercent) / 100 - (m.loggedSeconds + m.plannedSeconds)
+    lines.push(`    room left under the ceiling after this plan: ${(headroom / 3600).toFixed(2)}h`)
+    if (m.capacityOverridden) {
+      lines.push('    !! capacity was supplied by you, not measured. The ceiling is only as right as that number.')
+    }
+  }
+  return lines.join('\n')
+}

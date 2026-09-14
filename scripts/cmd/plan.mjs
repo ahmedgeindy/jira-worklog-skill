@@ -2,7 +2,8 @@
 import { parseLine } from '../lib/urls.mjs'
 import { sequenceStarts, hashPlan, validateComment, sanitizeCommentText, commentMatchesIssue } from '../lib/plan.mjs'
 import { fingerprint, classify } from '../lib/dedup.mjs'
-import { isWorkday, weekdayOf, assertNotFuture, localVsJiraDateDiffers } from '../lib/tz.mjs'
+import { isWorkday, weekdayOf, assertNotFuture, localVsJiraDateDiffers, dayOfInstant } from '../lib/tz.mjs'
+import { monthWindow, capacitySeconds, ceilingVerdict, explain, HOURS_PER_DAY, CEILING_PERCENT } from '../lib/capacity.mjs'
 import { UNSAFE_CHARS } from '../lib/psline.mjs'
 
 const FLOOR_SECONDS = 7 * 3600
@@ -13,7 +14,28 @@ const FLOOR_SECONDS = 7 * 3600
 const CEILING_SECONDS = 12 * 3600
 const MAX_DAYS = 5
 
-export function runPlan({ lines, isoDate, deps = {} }) {
+export function runPlan({
+  lines,
+  isoDate,
+  deps = {},
+  // Seconds this same multi-day run has already previewed but not yet written,
+  // keyed by 'YYYY-MM'. Manifest mode calls runPlan ONCE PER DATE, so without
+  // this each day would measure the month independently, see the same unchanged
+  // server total, and five 7.5h days would each pass a check the five of them
+  // together break.
+  //
+  // A MAP, not a scalar: MANIFEST_MAX_DAYS is 31, so one run really can straddle
+  // a month boundary, and a scalar would charge September's pending hours to
+  // October's capacity as well. That errs toward refusing, but it would print
+  // arithmetic that does not add up, which is its own kind of wrong.
+  pendingByMonth = {},
+  // Operator overrides. The report's capacity is per-person (colleagues on the
+  // same dashboard show 80h, 72h and 64h for one fortnight - 8h/day against
+  // different day counts), and this tool cannot see leave or a start date.
+  capacityHours = null,
+  hoursPerDay = HOURS_PER_DAY,
+  ceilingPercent = CEILING_PERCENT,
+}) {
   const dates = Array.isArray(isoDate) ? isoDate : [isoDate]
   if (dates.length > MAX_DAYS) {
     throw new Error(`refusing ${dates.length} days: max 5 days per run (decision D4)`)
@@ -216,7 +238,82 @@ export function runPlan({ lines, isoDate, deps = {} }) {
     }
   })
 
-  const plan = { version: 1, accountId: identity.accountId, zone: identity.zone, days }
+  // ---- Month-to-date progress ceiling (REFUSAL, not a warning) ----
+  //
+  // Every rail above is per-day and none of them can see an aggregate: nine
+  // separately defensible 7.5h days passed all of them and put September at
+  // 141.9% of capacity. A short day can be topped up tomorrow; an over-claim is
+  // already on a manager's report, so this refuses rather than annotating.
+  //
+  // Required dep, never optional. Defaulting it to a no-op would silently
+  // disable the ceiling for every caller that forgot to pass it, which is the
+  // same false-green class as a check that passes against the wrong thing.
+  if (typeof deps.monthTotal !== 'function') {
+    throw new Error(
+      'runPlan requires deps.monthTotal: the month-to-date progress ceiling cannot be evaluated without it, ' +
+      'and silently skipping the ceiling would let a plan through unchecked.',
+    )
+  }
+  if (capacityHours !== null && (!Number.isFinite(Number(capacityHours)) || Number(capacityHours) <= 0)) {
+    throw new Error(`--capacity-hours must be a positive number of hours, got ${JSON.stringify(capacityHours)}`)
+  }
+
+  const todayIso = dayOfInstant(nowMs, identity.zone)
+  const plannedByMonth = new Map()
+  for (const d of days) {
+    const ym = d.date.slice(0, 7)
+    plannedByMonth.set(ym, (plannedByMonth.get(ym) ?? 0) + Number(d.plannedSeconds))
+  }
+  const plannedKeys = [...new Set(days.flatMap((d) => d.entries.map((e) => e.key)))]
+
+  const months = []
+  for (const window of monthWindow({ todayIso, plannedDates: dates })) {
+    const mt = deps.monthTotal({
+      zone: identity.zone, accountId: identity.accountId,
+      fromIso: window.from, toIso: window.to, extraKeys: plannedKeys,
+    })
+    if (mt.status !== 'OK') {
+      throw new Error(
+        `UNKNOWN month-to-date total for ${window.month} (${window.from}..${window.to}): ${mt.reason}. ` +
+        'Refusing to check the progress ceiling against an unverified number.',
+      )
+    }
+    const overridden = capacityHours !== null
+    const cap = overridden
+      ? Math.round(Number(capacityHours) * 3600)
+      : capacitySeconds({ fromIso: window.from, toIso: window.to, hoursPerDay })
+    const verdict = ceilingVerdict({
+      loggedSeconds: mt.seconds,
+      plannedSeconds: (plannedByMonth.get(window.month) ?? 0) + Number(pendingByMonth[window.month] ?? 0),
+      capacitySeconds: cap,
+      ceilingPercent,
+    })
+    const lines = explain({ window, verdict, hoursPerDay, capacityOverridden: overridden, ceilingPercent })
+    if (!verdict.ok) {
+      throw new Error(
+        `PROGRESS CEILING: ${verdict.reason}.\n` +
+        `${lines.join('\n')}\n` +
+        `    over the ceiling by ${(verdict.excessSeconds / 3600).toFixed(2)}h\n` +
+        '  Nothing was planned. To proceed you must either reduce the hours in this plan, or - if your real\n' +
+        '  capacity for this month is not the model above (leave, a start date mid-month, part time) - re-run\n' +
+        '  with --capacity-hours <your real capacity in hours>, which is recorded in the plan file.',
+      )
+    }
+    months.push({
+      month: window.month, from: window.from, to: window.to,
+      loggedSeconds: mt.seconds,
+      plannedSeconds: verdict.planned,
+      capacitySeconds: cap,
+      capacityOverridden: overridden,
+      hoursPerDay, ceilingPercent,
+      percent: verdict.percent,
+      explain: lines,
+    })
+  }
+
+  // version 2: plans now carry `months`, and hashPlan covers it. A version-1
+  // file cannot be emitted from - see lib/planfile.mjs.
+  const plan = { version: 2, accountId: identity.accountId, zone: identity.zone, days, months }
   plan.planHash = hashPlan(plan)
   return plan
 }
