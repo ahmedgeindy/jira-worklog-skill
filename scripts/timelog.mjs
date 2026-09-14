@@ -230,7 +230,7 @@ if (cmd === 'plan' && process.argv.includes('--manifest')) {
   }
 } else if (cmd === 'check-cmd') {
   const plan = loadPlan()
-  const r = checkCmd({ plan, date: arg('date'), cmd: arg('cmd'), deps: { checkWindow, bin: locateTwg(), tokens: tokenStoreForPlan() } })
+  const r = checkCmd({ plan, date: arg('date'), cmd: arg('cmd'), deps: { checkWindow, monthTotal, bin: locateTwg(), tokens: tokenStoreForPlan() } })
   process.stdout.write(r.ok ? 'OK\n' : `ABORT: ${r.reason}\n`)
   process.exit(r.ok ? 0 : 1)
 } else if (cmd === 'check-write') {
