@@ -203,6 +203,21 @@ export function hashPlan(plan) {
   const canonical = {
     accountId: plan.accountId ?? null,
     zone: plan.zone ?? null,
+    // The month-to-date progress block (lib/capacity.mjs) is rendered at the
+    // gate, so by the same argument as commentSource below it changes what the
+    // approval MEANS and belongs inside the hash. A hand-edited plan.json could
+    // otherwise show a comfortable 60% over a month that really stands at 140%,
+    // and the human would approve the writes against a number nothing checked.
+    // The numbers are hashed, not the rendered prose, which is derived from them.
+    months: (plan.months ?? []).map((m) => ({
+      month: m.month, from: m.from ?? null, to: m.to ?? null,
+      loggedSeconds: m.loggedSeconds ?? null,
+      plannedSeconds: m.plannedSeconds ?? null,
+      capacitySeconds: m.capacitySeconds ?? null,
+      capacityOverridden: m.capacityOverridden ?? null,
+      hoursPerDay: m.hoursPerDay ?? null,
+      ceilingPercent: m.ceilingPercent ?? null,
+    })),
     days: (plan.days ?? []).map((d) => ({
       date: d.date,
       entries: (d.entries ?? []).map((e) => ({
