@@ -119,7 +119,8 @@ node skills/jira-worklog/scripts/timelog.mjs emit --plan plan.json --date <D> --
 Then, for each emitted line **in the order given**:
 
 1. `node ...\timelog.mjs check-cmd --plan plan.json --date <D> --expect-hash <hash> --cmd "<line>"`
-   → must print `OK`.
+   → must print `OK`. This is also where the 105% month ceiling is re-checked against the live
+   server; `PROGRESS CEILING at write time` stops the day.
 2. Execute that exact line, unmodified, **by the mechanism your harness's reference file
    specifies** — `references/claude-code.md` or `references/codex.md`. The two differ in who runs
    the line and in what supplies the consent; picking the wrong one removes the human. Never
@@ -181,6 +182,19 @@ start or a part-time contract, so it prints the model it used rather than applyi
 When the model is wrong for the user, re-run with `--capacity-hours <hours>`. The override is
 labelled at the gate and recorded in the plan file — it is never presented as a measurement. Do
 not supply it yourself; it is the user's number.
+
+**The ceiling is checked twice.** `plan` evaluates it when the plan is built, and `check-cmd`
+re-evaluates it against the **live** month immediately before every single write. Between the
+user's approval and the write the month can move — time typed into the Jira UI, another session,
+or the earlier entries of this same plan landing one at a time. A plan approved at 100% must not
+be written past 105% because nothing looked again.
+
+At write time the capacity comes from the plan's frozen `months` block, never recomputed. A
+recomputed capacity would *grow* as the month advances, loosening the ceiling exactly when the
+write is closest to happening.
+
+A write-time breach reads `PROGRESS CEILING at write time`. It is a **stop-the-day** condition
+like any other `check-cmd` failure: report which entries landed, and re-run `plan`.
 
 **A ceiling breach is not something to plan around.** Do not split a plan across runs to slip
 under it (the multi-day accumulator refuses that anyway), and do not reduce the user's stated
