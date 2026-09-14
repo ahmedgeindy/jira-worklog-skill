@@ -143,4 +143,14 @@ The skill's behaviour is a safety contract, so treat it like one:
 - **patch** — docs, comments, test-only changes.
 - **minor** — new capability that cannot change what an existing plan writes.
 - **major** — anything that could change the hours, dates, or issue a given input
-  produces. The `7:30h` parser fix was exactly this: same input, different number.
+  produces, **or that refuses an input the previous version accepted**. Two
+  concrete examples so far:
+  - The `7:30h` parser fix: same input, different number.
+  - The 105% month progress ceiling. It refuses plans that used to be written,
+    and it changed `hashPlan`'s canonical form (plans now carry `months`), so
+    **every plan file written by an earlier version is unusable** — `emit` and
+    the guards reject it. `lib/planfile.mjs` names that cause explicitly rather
+    than reporting it as tampering, but the break is real and belongs in the
+    release notes, not just the diff. Plan files are short-lived by design
+    (written, approved, emitted, done), so the blast radius is one in-flight
+    plan per user, not stored data.

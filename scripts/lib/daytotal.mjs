@@ -1,5 +1,5 @@
 // skills/jira-worklog/scripts/lib/daytotal.mjs
-import { queryWindow, addDays } from './tz.mjs'
+import { queryWindow, addDays, dayOfInstant } from './tz.mjs'
 import { run as realRun, assertTrustworthy, assertEcho } from './twg.mjs'
 
 /**
@@ -163,6 +163,88 @@ export function dayTotal({ zone, accountId, isoDate, extraKeys = [], deps = {} }
     return {
       seconds: 0, status: 'UNKNOWN', candidates, countedWorklogIds,
       reason: `JQL returned ${discoveredOnDay.length} issue(s) with my time on ${isoDate} but the author-filtered sum is 0${sawAnyRow ? ' (rows exist, none mine)' : ' (no rows returned at all)'}`,
+    }
+  }
+
+  return { seconds, status: 'OK', reason: '', countedWorklogIds, candidates }
+}
+
+/**
+ * Author-filtered total over a DATE RANGE, for the month-to-date capacity check
+ * (lib/capacity.mjs). Same two-step shape as dayTotal, and for the same reason:
+ * a per-issue worklog query returns every author, and an unverified zero here is
+ * worse than a day-level one. A false zero makes the ceiling check PASS - it
+ * would authorise exactly the over-log the ceiling exists to refuse - so the
+ * positive control below is the load-bearing part of this function, not a
+ * nicety. It returns UNKNOWN rather than a number it cannot stand behind.
+ */
+export function monthTotal({ zone, accountId, fromIso, toIso, extraKeys = [], deps = {} }) {
+  const run = deps.run ?? realRun
+  if (!accountId) {
+    return { seconds: 0, status: 'UNKNOWN', reason: 'no accountId: the author filter would match nothing and every sum would read 0', countedWorklogIds: [], candidates: [] }
+  }
+
+  // Both bounds come from the same tz helpers a single day uses: the lower edge
+  // widened by 1ms (twg's bounds are strictly exclusive on both ends) and the
+  // upper edge at local midnight opening the day AFTER toIso.
+  const window = { after: queryWindow(zone, fromIso).after, before: queryWindow(zone, toIso).before }
+
+  const jql = `worklogAuthor = currentUser() AND worklogDate >= "${fromIso}" AND worklogDate < "${addDays(toIso, 1)}"`
+  let discovered = []
+  try {
+    const res = run(['jira', 'workitem', 'query', '--jql', jql, '-o', 'json'])
+    assertTrustworthy(res, 'JQL month discovery')
+    discovered = (res.data?.issues ?? []).map((i) => i.key)
+  } catch (e) {
+    return { seconds: 0, status: 'UNKNOWN', reason: `JQL month discovery failed: ${e.message}`, countedWorklogIds: [], candidates: [] }
+  }
+
+  const candidates = [...new Set([...discovered, ...extraKeys])]
+  if (candidates.length === 0) {
+    // No issue in the whole range carries my time. Unlike the day case this is
+    // reported as a real zero only because the SAME query that would have found
+    // work is the one that came back empty - there is no narrower control that
+    // could disagree with it.
+    return { seconds: 0, status: 'OK', reason: 'no candidate issues in range', countedWorklogIds: [], candidates }
+  }
+
+  let seconds = 0
+  const countedWorklogIds = []
+  let sawAnyRow = false
+
+  for (const key of candidates) {
+    let page
+    try {
+      page = pageWorklogs(run, key, window)
+    } catch (e) {
+      return { seconds: 0, status: 'UNKNOWN', reason: `worklog read failed on ${key}: ${e.message}`, countedWorklogIds: [], candidates }
+    }
+    if (page.declaredTotal !== null && page.rows.length !== page.declaredTotal) {
+      return {
+        seconds: 0, status: 'UNKNOWN', candidates, countedWorklogIds,
+        reason: `pagination mismatch on ${key}: collected ${page.rows.length}, meta.pagination.total ${page.declaredTotal}`,
+      }
+    }
+    if (page.rows.length) sawAnyRow = true
+    for (const r of page.rows) {
+      if (r?.author?.accountId !== accountId) continue
+      // The window is already the range, but a row is only counted when its own
+      // Jira calendar day lands inside it: the 1ms widening at the lower edge
+      // can otherwise admit a worklog started at 23:59:59.999 the day before.
+      const day = dayOfInstant(Date.parse(String(r.started).replace(/([+-]\d{2})(\d{2})$/, '$1:$2')), zone)
+      if (day < fromIso || day > toIso) continue
+      seconds += Number(r.timeSpentSeconds ?? 0)
+      countedWorklogIds.push(r.id)
+    }
+  }
+
+  // POSITIVE CONTROL. JQL says I logged inside this range, but the author filter
+  // summed to nothing: the read is broken, not the month empty. Reporting 0 here
+  // would clear the ceiling for any plan at all.
+  if (discovered.length > 0 && seconds === 0) {
+    return {
+      seconds: 0, status: 'UNKNOWN', candidates, countedWorklogIds,
+      reason: `JQL returned ${discovered.length} issue(s) with my time in ${fromIso}..${toIso} but the author-filtered sum is 0${sawAnyRow ? ' (rows exist, none mine)' : ' (no rows returned at all)'}`,
     }
   }
 

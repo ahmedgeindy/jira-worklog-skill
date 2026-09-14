@@ -21,7 +21,15 @@ const CLI = fileURLToPath(new URL('../timelog.mjs', import.meta.url))
 
 function makePlan(over = {}) {
   const p = {
-    version: 1, accountId: ME, zone: 'Asia/Riyadh',
+    version: 2, accountId: ME, zone: 'Asia/Riyadh',
+    // A v2 plan carries a months block; lib/planfile.mjs refuses one without it,
+    // because a pre-ceiling plan was never checked against the 105% ceiling.
+    months: [{
+      month: '2026-09', from: '2026-09-01', to: '2026-09-08',
+      loggedSeconds: 0, plannedSeconds: 25200, capacitySeconds: 6 * 8 * 3600,
+      capacityOverridden: false, hoursPerDay: 8, ceilingPercent: 105,
+      percent: 14.58, explain: ['  MONTH 2026-09: capacity 48.00h'],
+    }],
     days: [{
       date: '2026-09-08', existingSeconds: 0, status: 'MEETS',
       entries: [{
@@ -125,6 +133,7 @@ test('a real plan survives the JSON round-trip the production path performs', ()
   const deps = {
     resolveIdentity: () => ({ accountId: ME, zone: 'Asia/Riyadh', displayName: 'T' }),
     dayTotal: () => ({ seconds: 5 * 3600, status: 'OK', reason: '', countedWorklogIds: [], candidates: [] }),
+    monthTotal: () => ({ seconds: 5 * 3600, status: 'OK', reason: '', countedWorklogIds: [], candidates: [] }),
     checkWindow: () => [],
     bundle: () => ({
       perIssue: { 'PROJ-323': [{ source: 'jira-changelog', timestamp: 't', fragment: 'status: In Progress' }] },
