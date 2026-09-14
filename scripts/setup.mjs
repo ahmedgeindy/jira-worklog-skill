@@ -118,10 +118,10 @@ const npmArgv = (argv) =>
  * this process's directory -- which, run from a clone, made the installed-copy check
  * test the repo instead, and report a confident pass either way.
  */
-function run(cmd, argv, { timeout = 120_000, cwd } = {}) {
+function run(cmd, argv, { timeout = 120_000, cwd, env } = {}) {
   try {
     const out = execFileSync(cmd, argv, {
-      encoding: 'utf8', timeout, cwd, stdio: ['ignore', 'pipe', 'pipe'],
+      encoding: 'utf8', timeout, cwd, env, stdio: ['ignore', 'pipe', 'pipe'],
     })
     return { status: 0, out }
   } catch (err) {
@@ -173,6 +173,40 @@ function officialInstructions() {
 }
 
 /**
+ * Which PowerShell to run the vendor installer with, and with what environment.
+ *
+ * Two separate hazards, both measured on a clean windows-latest runner:
+ *
+ *  1. PSModulePath contamination. If this process was started from PowerShell 7,
+ *     the inherited PSModulePath points at PowerShell 7's module directories.
+ *     Windows PowerShell 5.1 then cannot resolve its OWN bundled modules, and
+ *     Microsoft.PowerShell.Utility is one of them -- so `Get-FileHash` does not
+ *     exist, and the installer dies verifying its download's SHA256:
+ *         Get-FileHash : The term 'Get-FileHash' is not recognized ...
+ *     Deleting the variable makes each host fall back to its own defaults, which
+ *     is what a normally-launched shell would have had.
+ *
+ *  2. pwsh is not always present, and powershell.exe is not always present either
+ *     (Windows 11 ships both today; a trimmed image may not). Prefer pwsh, which
+ *     is what a current Windows box runs interactively, and fall back.
+ *
+ * This is not a CI-only concern: a teammate running `npx ... setup` from a
+ * PowerShell 7 prompt hits exactly hazard 1 on their own machine.
+ */
+function powershellFor() {
+  const env = { ...process.env }
+  delete env.PSModulePath
+
+  for (const exe of ['pwsh.exe', 'powershell.exe']) {
+    const probe = run(exe, ['-NoProfile', '-Command', 'exit 0'], { timeout: 60_000, env })
+    if (probe.status === 0) return { exe, env }
+  }
+  // Neither probed clean; use the one Windows has always shipped and let the
+  // installer's own output explain what went wrong.
+  return { exe: 'powershell.exe', env }
+}
+
+/**
  * Install twg with the vendor's own installer.
  *
  * --skip-login and --skip-skills are passed deliberately. Otherwise the installer
@@ -207,9 +241,10 @@ function installTwg() {
         '-Yes', '-SkipLogin', '-SkipSkills',
         ...(override ? ['-InstallDir', resolve(override)] : []),
       ]
-      note(`powershell -NoProfile -ExecutionPolicy Bypass -File <downloaded> -Yes -SkipLogin -SkipSkills${override ? ' -InstallDir …' : ''}`)
+      const { exe, env } = powershellFor()
+      note(`${exe} -NoProfile -ExecutionPolicy Bypass -File <downloaded> -Yes -SkipLogin -SkipSkills${override ? ' -InstallDir …' : ''}`)
       flush()
-      const r = run('powershell.exe', argv, { timeout: 900_000 })
+      const r = run(exe, argv, { timeout: 900_000, env })
       return r.status === 0 ? { ok: true } : { ok: false, why: `installer exited ${r.status}`, out: r.out }
     }
 
