@@ -238,9 +238,20 @@ if (!found && !OPT.noInstallTwg) {
   const res = installTwg()
   if (!res.ok) {
     fail('twg', `automatic install failed: ${res.why}`)
+    // The vendor installer's OWN output, always -- not only under --verbose.
+    // "installer exited 1" on its own tells the operator nothing they can act on
+    // and sends them to re-run the thing that just failed. Whatever the installer
+    // said about why is the only useful content here, so it is printed before the
+    // manual instructions rather than hidden behind a flag nobody passes on the
+    // first run. (Found by the Windows CI job: a genuine clean-machine install
+    // failure that reported exactly one unactionable line.)
+    if (res.out && res.out.trim()) {
+      note('')
+      note('The installer said:')
+      for (const line of res.out.trim().split(/\r?\n/).slice(-15)) note(`  ${line}`)
+    }
     note('')
     officialInstructions()
-    if (res.out && OPT.verbose) note(res.out.trim().split(/\r?\n/).slice(-5).join(' / '))
     flush()
     console.log('\nSetup stopped: twg is required and could not be installed automatically.\n')
     process.exit(2)
