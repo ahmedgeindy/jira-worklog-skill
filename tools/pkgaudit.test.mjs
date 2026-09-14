@@ -16,6 +16,7 @@ import { auditFiles, summarize, ALLOWED } from './pkgaudit.mjs'
 // GitHub shapes are sequential alphabets. None has ever been a live credential.
 const ATLASSIAN_TOKEN = `ATATT3${'xFfGF0'}abcdefghij1234567890`
 const GITHUB_TOKEN = `gh${'p'}_abcdefghijklmnopqrstuvwxyz0123456789`
+const NPM_TOKEN = `npm${'_'}abcdefghijklmnopqrstuvwxyz0123456789`
 const AWS_KEY = `AKIA${'IOSFODNN7'}EXAMPLE`
 const AWS_KEY_2 = `AKIA${'IOSFODNN7'}EXAMPLB`
 const PRIVATE_KEY_HEADER = `-----BEGIN ${'RSA'} PRIVATE KEY-----`
@@ -27,11 +28,14 @@ const PASSWORD_LINE = `pass${'word'}=TESTVECTOR_REDACTED`
 // SHAPE, so a fabricated account id and address prove exactly as much as the
 // author's own did -- and this file is not the place to keep either.
 const ACCOUNT_ID = '712020:11111111-2222-3333-4444-555555555555'
-const CLOUD_UUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+// A VALID v4 shape: the rule requires the version nibble '4' and an 8/9/a/b
+// variant nibble. Assembled so a history rewrite cannot quietly turn this
+// positive control into a string the rule does not match -- which is exactly
+// what happened on the first rewrite attempt, with the suite still green.
+// The 24-hex Jira accountId shape, assembled for the same reason.
+const JIRA_ACCOUNT_ID = `${'604f241d'}06cbba006ad6517c`
+const CLOUD_UUID_V4 = `${'11111111'}-2222-4333-a444-${'555555555555'}`
 
-// The org name IS the thing internal-host and internal-org match, so it cannot be
-// swapped for a placeholder without the test ceasing to test anything. Assembled
-// at runtime for the same reason as the specimens above.
 // Internal issue keys, assembled for the same reason as everything above: the
 // repository history was rewritten to purge these strings, and a literal here
 // would have been rewritten with it -- silently turning a positive control into
@@ -44,6 +48,8 @@ const SHIPPED_UNDER_CLEAN = [
   KEY_HIVEDEV(3234), `CX${'OPS'}-17`, `CX${'OPS'}-1`,
   `K2${'227759'}-141`, `U2${'633237'}-39`, `EAK2${'1GEOO'}-281`,
 ]
+// The org name IS what internal-host and internal-org match, so it cannot be
+// swapped for a placeholder without the test ceasing to test anything.
 const ORG = `ist${'networks'}`
 const INTERNAL_HOST = `${ORG}-dev.atlassian.net`
 const INTERNAL_EMAIL = `a.person@${ORG}.com`
@@ -74,7 +80,7 @@ test('an AWS key id is caught', () => {
 
 test('a GitHub and an npm token are caught', () => {
   assert.ok(ids(GITHUB_TOKEN).includes('vendor-token'))
-  assert.ok(ids('TESTVECTOR_REDACTED').includes('vendor-token'))
+  assert.ok(ids(NPM_TOKEN).includes('vendor-token'))
 })
 
 test('a secret assigned to a key is caught', () => {
@@ -83,7 +89,7 @@ test('a secret assigned to a key is caught', () => {
 })
 
 test('a real-looking Jira accountId is caught', () => {
-  assert.ok(ids('"accountId": "a1b2c3d4e5f60718293a4b5c"').includes('jira-account-id'))
+  assert.ok(ids(`"accountId": "${JIRA_ACCOUNT_ID}"`).includes('jira-account-id'))
 })
 
 test('a real Atlassian account uuid is caught', () => {
@@ -91,7 +97,7 @@ test('a real Atlassian account uuid is caught', () => {
 })
 
 test('a cloud id is caught', () => {
-  assert.ok(ids('00000000-0000-0000-0000-000000000000').includes('cloud-uuid'))
+  assert.ok(ids(CLOUD_UUID_V4).includes('cloud-uuid'))
 })
 
 test('a real email address is caught', () => {
