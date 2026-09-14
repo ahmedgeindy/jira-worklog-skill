@@ -10,10 +10,17 @@ const BIN = 'C:/twg/twg.exe'
 const ME = 'me-1'
 const IDENT = { accountId: ME, zone: 'Asia/Riyadh', displayName: 'Test' }
 
-function deps({ dayTotalStatus = 'OK', existing = 0 } = {}) {
+function deps({ dayTotalStatus = 'OK', existing = 0, monthLogged = 0, monthStatus = 'OK', onMonthTotal = null } = {}) {
   return {
     resolveIdentity: () => IDENT,
     dayTotal: () => ({ seconds: existing, status: dayTotalStatus, reason: 'ctl', countedWorklogIds: [], candidates: [] }),
+    // Default is a near-empty month: these tests predate the progress ceiling
+    // and assert day-level behaviour, so the ceiling must not be what they trip
+    // over. lib/capacity and the ceiling tests below cover it directly.
+    monthTotal: (a) => {
+      if (onMonthTotal) onMonthTotal(a)
+      return { seconds: monthLogged, status: monthStatus, reason: monthStatus === 'OK' ? '' : 'stub month failure', countedWorklogIds: [], candidates: [] }
+    },
     checkWindow: () => [],
     bundle: () => ({
       perIssue: {

@@ -9,10 +9,10 @@ import { runPlan } from './cmd/plan.mjs'
 import { emitManifest } from './cmd/emit.mjs'
 import { checkCmd, checkWrite, fileTokenStore } from './cmd/guard.mjs'
 import { runVerify } from './cmd/verify.mjs'
-import { renderThenPersist } from './lib/preview.mjs'
+import { renderThenPersist, renderMonths } from './lib/preview.mjs'
 import { loadPlanFile } from './lib/planfile.mjs'
 import { resolveIdentity } from './lib/identity.mjs'
-import { dayTotal } from './lib/daytotal.mjs'
+import { dayTotal, monthTotal } from './lib/daytotal.mjs'
 import { checkWindow } from './lib/dedup.mjs'
 import { bundle } from './lib/evidence.mjs'
 import { run, assertTrustworthy, locateTwg } from './lib/twg.mjs'
@@ -49,8 +49,27 @@ function readEstimate(key) {
 }
 
 const LIVE_DEPS = {
-  resolveIdentity, dayTotal, checkWindow, bundle, resolveIssue, readEstimate,
+  resolveIdentity, dayTotal, monthTotal, checkWindow, bundle, resolveIssue, readEstimate,
   now: () => Date.now(),
+}
+
+/**
+ * --capacity-hours overrides the computed month capacity (Sun-Thu workdays x 8h).
+ * It exists because the real report is per-person: colleagues on the same
+ * dashboard show 80h, 72h and 64h for one fortnight, i.e. the same 8h/day
+ * against different day counts. This tool cannot see leave, a mid-month start
+ * or a part-time contract, so it states the model it used and takes a correction
+ * rather than silently guessing. The value is recorded in the plan file.
+ */
+function capacityHoursArg() {
+  const raw = arg("capacity-hours")
+  if (raw === null) return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) {
+    process.stderr.write(`PLAN REFUSED: --capacity-hours must be a positive number of hours, got ${JSON.stringify(raw)}.\n\nNothing was written.\n`)
+    process.exit(2)
+  }
+  return n
 }
 
 const cmd = process.argv[2]
@@ -126,11 +145,18 @@ function runManifest() {
   mkdirSync(resolve(outDir), { recursive: true })
 
   const bin = locateTwg()
+  const capacityHours = capacityHoursArg()
   const summary = []
+  // Manifest mode calls runPlan ONCE PER DATE, and nothing is written between
+  // days, so every call reads the SAME unchanged server total. Without this
+  // accumulator five 7.5h days would each measure the month alone and each pass
+  // a ceiling that the five of them together break.
+  const pendingByMonth = {}
+  let lastPlan = null
   for (const date of dates) {
     let plan
     try {
-      plan = runPlan({ lines: byDate.get(date), isoDate: [date], deps: LIVE_DEPS })
+      plan = runPlan({ lines: byDate.get(date), isoDate: [date], deps: LIVE_DEPS, pendingByMonth, capacityHours })
     } catch (e) {
       process.stderr.write(
         `PLAN REFUSED on ${date}: ${e.message}\n\n` +
@@ -142,6 +168,9 @@ function runManifest() {
     const blocks = renderThenPersist(plan, bin, () => writeFileSync(out, JSON.stringify(plan, null, 2)))
     for (const block of blocks) process.stdout.write(`${block}\n\n`)
     const d = plan.days[0]
+    const ym = date.slice(0, 7)
+    pendingByMonth[ym] = (pendingByMonth[ym] ?? 0) + Number(d.plannedSeconds)
+    lastPlan = plan
     summary.push({ date, hash: plan.planHash, entries: d.entries.length, status: d.status })
   }
 
@@ -152,6 +181,10 @@ function runManifest() {
   for (const s of summary) {
     process.stdout.write(`  ${s.date}  ${String(s.entries).padStart(2)} entr${s.entries === 1 ? 'y' : 'ies'}  ${s.status.padEnd(7)} --expect-hash ${s.hash}\n`)
   }
+  // The month block comes from the LAST plan: it is the only one whose
+  // pendingSeconds covers every earlier day, so it is the only one stating the
+  // month total the whole run would actually produce.
+  if (lastPlan) process.stdout.write(`\n${renderMonths(lastPlan)}\n`)
   const exceeds = summary.filter((s) => s.status === 'EXCEEDS')
   if (exceeds.length) {
     process.stdout.write(`\n  ${exceeds.length} day(s) EXCEED the plausibility ceiling: ${exceeds.map((s) => s.date).join(', ')}\n`)
@@ -169,7 +202,7 @@ if (cmd === 'plan' && process.argv.includes('--manifest')) {
   // never have to interpret an exception to learn what the tool refused and why.
   let plan
   try {
-    plan = runPlan({ lines, isoDate: dates, deps: LIVE_DEPS })
+    plan = runPlan({ lines, isoDate: dates, deps: LIVE_DEPS, capacityHours: capacityHoursArg() })
   } catch (e) {
     process.stderr.write(`PLAN REFUSED: ${e.message}\n\nNothing was written. No plan file was created.\n`)
     process.exit(2)
@@ -188,6 +221,7 @@ if (cmd === 'plan' && process.argv.includes('--manifest')) {
   for (const block of blocks) {
     process.stdout.write(`${block}\n\n`)
   }
+  process.stdout.write(`${renderMonths(plan)}\n\n`)
   process.stdout.write(`plan written to ${out}\n`)
 } else if (cmd === 'emit') {
   const plan = loadPlan()
@@ -221,7 +255,7 @@ if (cmd === 'plan' && process.argv.includes('--manifest')) {
 } else {
   process.stderr.write(
     `unknown command: ${cmd ?? '(none)'}\n` +
-    'usage: timelog.mjs plan --date YYYY-MM-DD --out plan.json\n' +
+    'usage: timelog.mjs plan --date YYYY-MM-DD --out plan.json [--capacity-hours <h>]\n' +
     '       timelog.mjs emit --plan plan.json --date YYYY-MM-DD --expect-hash <planHash>\n' +
     '       timelog.mjs check-cmd --plan plan.json --date YYYY-MM-DD --expect-hash <planHash> --cmd "<literal line>"\n' +
     '       timelog.mjs check-write --plan plan.json --date YYYY-MM-DD --expect-hash <planHash> --key <KEY> [--fingerprint <fp>]\n' +

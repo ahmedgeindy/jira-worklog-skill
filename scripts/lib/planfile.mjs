@@ -38,6 +38,19 @@ export function assertPlanIntegrity(plan, expectHash, { requireExpectHash = true
   if (!plan.planHash) {
     throw new Error('ABORT: plan file carries no planHash; re-run `plan` and approve the preview it prints')
   }
+  // A plan written before the progress ceiling existed has no `months` key,
+  // and hashPlan's canonical form now includes one - so its stored hash can
+  // never match and it would otherwise be reported as "changed since it was
+  // previewed". That is the right REFUSAL with an accusing and untrue reason:
+  // nobody edited the file. Name the real cause, because the operator should
+  // never have to work out that a tool upgrade is what broke their plan.
+  if (!Array.isArray(plan.months)) {
+    throw new Error(
+      'ABORT: this plan file was written before the 105% month progress ceiling existed, so it was ' +
+      'never checked against it (no `months` block). Nothing here may be written. Re-run `plan` ' +
+      'and approve the new preview.',
+    )
+  }
   if (String(plan.planHash) !== recomputed) {
     throw new Error(
       `ABORT: this plan file has changed since it was previewed — stored planHash ${plan.planHash}, ` +

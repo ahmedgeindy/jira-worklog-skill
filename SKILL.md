@@ -1,6 +1,6 @@
 ---
 name: jira-worklog
-description: Use when logging time to Jira from issue URLs or keys with hours, reviewing what is already logged for a day, or checking a day against the 7h policy floor. Drives scripts/timelog.mjs through plan, a human gate, guarded writes, and verify — against Asia/Riyadh Jira days and a Sunday–Thursday work week. Handles backdating, duplicate detection against live server state, evidence-backed worklog comments, and estimate protection. Use for "log my time", "log 3h on PROJ-323", "what did I log yesterday", "check my day against policy", or a pasted list of Jira URLs with hours.
+description: Use when logging time to Jira from issue URLs or keys with hours, reviewing what is already logged for a day, or checking a day against the 7h policy floor and the 105% month progress ceiling. Drives scripts/timelog.mjs through plan, a human gate, guarded writes, and verify — against Asia/Riyadh Jira days and a Sunday–Thursday work week. Handles backdating, duplicate detection against live server state, evidence-backed worklog comments, and estimate protection. Use for "log my time", "log 3h on PROJ-323", "what did I log yesterday", "check my day against policy", or a pasted list of Jira URLs with hours.
 ---
 
 ## Overview
@@ -94,7 +94,7 @@ issue. Report the abort and its reason — do not work around it.
 ### 4. Gate
 
 **Paste the rendered preview verbatim into chat.** It shows every entry, its evidence, the literal
-command, the resulting day total, the 7h verdict, and a `planHash`.
+command, the resulting day total, the 7h verdict, the month-to-date progress block, and a `planHash`.
 
 Ask the user to confirm **this date and these rows**. One confirmation authorizes exactly what is
 on screen. A blanket "yes to everything" is not consent to a later plan.
@@ -152,6 +152,43 @@ either yourself.
 
 **To close a short day:** re-run `plan` for the same date with additional entries. The day-total
 read sees the existing time, so the new entries land on top of it with dedup intact.
+
+## The 105% progress ceiling
+
+Month-to-date logged time may not exceed **105% of capacity**. `plan` measures the month, adds
+what the plan would write, and **refuses** above the ceiling. Nothing is written and no plan file
+is created.
+
+The floor warns; this refuses. They are not symmetric. A short day is a policy gap that can be
+closed tomorrow. An over-log is an over-claim that is already on a manager's report, and this
+skill cannot take it back — it has no ability to delete or update a worklog, by construction.
+
+The refusal prints the arithmetic behind it:
+
+```
+PLAN REFUSED: PROGRESS CEILING: month-to-date would reach 143.1% of capacity; the ceiling is 105%.
+  MONTH 2026-09: capacity 80.00h = 10 workdays (Sun-Thu, 2026-09-01..2026-09-14) x 8h
+    already on server 113.50h + this plan 1.00h = 114.50h (143.1%)
+    105% ceiling = 84.00h
+    over the ceiling by 30.50h
+```
+
+**Capacity is a model, not a measurement.** It is Sunday–Thursday workdays month-to-date × 8h.
+Real capacity is per-person — colleagues on one dashboard show 80h, 72h and 64h for the same
+fortnight, the same 8h/day against different day counts. This skill cannot see leave, a mid-month
+start or a part-time contract, so it prints the model it used rather than applying it silently.
+
+When the model is wrong for the user, re-run with `--capacity-hours <hours>`. The override is
+labelled at the gate and recorded in the plan file — it is never presented as a measurement. Do
+not supply it yourself; it is the user's number.
+
+**A ceiling breach is not something to plan around.** Do not split a plan across runs to slip
+under it (the multi-day accumulator refuses that anyway), and do not reduce the user's stated
+hours to make a plan fit. Report the refusal and its arithmetic, and let the user decide.
+
+**This skill cannot fix an existing over-log.** Removing time needs `worklog delete` or
+`worklog update`, both refused by `assertArgvSafe` and never spawned from this process. Print the
+commands for the user to run themselves, and re-read the month afterwards to confirm.
 
 ## Duplicate states
 
