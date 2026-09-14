@@ -126,7 +126,7 @@ There is no cross-issue worklog command.
    absolute dates, and **only `>=` and `<`**. `>` and `<=` silently round the bound to end-of-day.
 2. A paged per-issue `worklog query`, author-filtered, asserting `collected == meta.pagination.total`.
 
-Never use `workitem get`.worklog — it is hard-capped at `maxResults 20` (`PROJ-1` has 39). Never
+Never use `workitem get`.worklog — it is hard-capped at `maxResults 20` (`PROJ-18` has 39). Never
 use issue-level `timespent` — it is lifetime-all-authors (372.25h observed against a true 15.00h).
 JQL `timespent` is **minutes**; REST is **seconds**.
 

@@ -233,3 +233,30 @@ test('a v2 plan that really was edited still gets the tamper message', () => {
     /changed since it was previewed/,
   )
 })
+
+// --------------------------------------------------- the breach-note wording
+//
+// 13 worklog comments on the live server still read "logged 3.5h, below the 7h
+// policy floor" on days that now hold 11h. That wording was unqualified, so it
+// described a moving number and became false the moment the day was topped up.
+// Those rows are historical and this skill cannot edit them -- worklog update is
+// unreachable by construction. What it CAN do is never write that sentence again.
+
+test('a SHORT day records the hours AS OF LOGGING, never as a bare claim', () => {
+  const d = deps({ existing: 0, monthLogged: 0 })
+  const plan = runPlan({ lines: ['PROJ-223 2h :: pair debugging'], isoDate: ['2026-09-14'], deps: d })
+  const comment = plan.days[0].entries[0].comment
+
+  assert.match(comment, /at time of logging this day held 2\.0h, below the 7h policy floor/)
+  // The failure mode itself: the note must never assert a present-tense total.
+  assert.equal(
+    /(?<!at time of logging this day held )\blogged \d/.test(comment), false,
+    'an unqualified "logged Xh" claim goes stale the moment the day is topped up',
+  )
+})
+
+test('a day that MEETS the floor carries no breach note at all', () => {
+  const d = deps({ existing: 0, monthLogged: 0 })
+  const plan = runPlan({ lines: ['PROJ-223 7.5h :: full day on the migrator'], isoDate: ['2026-09-14'], deps: d })
+  assert.equal(/policy floor/.test(plan.days[0].entries[0].comment), false)
+})

@@ -16,7 +16,11 @@
 // (leave, start dates, part-time). This module cannot know any of that, so it
 // states the model it used and takes an override instead of silently guessing.
 
-import { weekdayOf } from './tz.mjs'
+// isWorkday, not a second copy of the Sunday-Thursday set. This module shipped
+// with its own WORKDAYS Set duplicating lib/tz.mjs's, which meant the work week
+// was defined in two places: change one and capacity silently stops agreeing
+// with the weekend warning at the gate, with nothing failing to say so.
+import { isWorkday } from './tz.mjs'
 
 /** Company default. Matches the report tool's denominator: capacity / 8 is a whole day count. */
 export const HOURS_PER_DAY = 8
@@ -29,7 +33,6 @@ export const HOURS_PER_DAY = 8
 export const CEILING_PERCENT = 105
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-const WORKDAYS = new Set(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'])
 
 function assertIsoDate(d, what = 'date') {
   if (!DATE_RE.test(String(d))) throw new Error(`${what}: expected YYYY-MM-DD, got ${JSON.stringify(d)}`)
@@ -53,7 +56,7 @@ export function workdaysInRange(fromIso, toIso) {
   let n = 0
   const end = Date.parse(`${toIso}T00:00:00Z`)
   for (let t = Date.parse(`${fromIso}T00:00:00Z`); t <= end; t += 86400000) {
-    if (WORKDAYS.has(weekdayOf(new Date(t).toISOString().slice(0, 10)))) n += 1
+    if (isWorkday(new Date(t).toISOString().slice(0, 10))) n += 1
   }
   return n
 }
