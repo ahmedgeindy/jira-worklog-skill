@@ -25,6 +25,7 @@ import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describeTwgFailure } from './lib/twgstatus.mjs'
+import { classifyInstall } from './lib/installoutcome.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const IS_WINDOWS = platform() === 'win32'
@@ -312,36 +313,26 @@ if (!found && !OPT.noInstallTwg) {
   note('twg not found — installing it from Atlassian:')
   const res = installTwg()
 
-  // The installer places and PATHs the binary, and only THEN runs
-  // `twg setup finalize`, which can stop and ask something. So a non-zero exit
-  // does not mean nothing was installed -- measured on a clean runner, the binary
-  // was already on disk and runnable while the installer sat on a legal-consent
-  // prompt. Ask the disk before believing the exit code.
+  // Ask the DISK what happened, not just the exit code: install.ps1 places and
+  // PATHs the binary and only THEN runs `twg setup finalize`, which can stop and
+  // ask something, so a non-zero exit does not mean nothing was installed.
   //
-  // Deliberately NOT auto-answered. That prompt is Atlassian's Customer Agreement;
-  // accepting a legal agreement on someone else's behalf is not a thing an install
-  // script gets to do, however convenient a `--yes` would be here. twg will ask the
-  // human itself on first interactive use, which is the right place for it.
-  if (!res.ok) {
-    const salvaged = locateTwg()
-    if (salvaged) {
-      TWG = salvaged
-      pass('twg', `${twgVersionOf(salvaged)} (installed)`)
-      note('The vendor installer did not finish cleanly, but the binary is present')
-      note('and runs, so setup continued. What it did not complete was its own final')
-      note('step (`twg setup finalize`).')
-      if (/\[y\/N\]|\[yes\/no\]|I agree|Customer Agreement/i.test(res.out ?? '')) {
-        note('')
-        note('It stopped on Atlassian\'s terms-of-use prompt. Nothing here will answer')
-        note('that for you: run `twg login` (or any twg command) once yourself and')
-        note('accept it there.')
-      }
-      found = salvaged
-      installedTwgNow = true
-    }
+  // The judgement lives in lib/installoutcome.mjs rather than here because here it
+  // could not be tested: the branch only runs when the vendor installer misbehaves,
+  // and CI went green on 2026-09-15 without entering it once -- the consent prompt
+  // did not fire that run. An unexercised recovery path is indistinguishable from a
+  // broken one, so it now has unit tests covering all four outcomes.
+  const outcome = classifyInstall({ ...res, binaryAfter: locateTwg() })
+
+  if (outcome.state === 'salvaged') {
+    TWG = locateTwg()
+    found = TWG
+    installedTwgNow = true
+    pass('twg', `${twgVersionOf(TWG)} (installed)`)
+    for (const line of outcome.notes) note(line)
   }
 
-  if (!res.ok && !found) {
+  if (outcome.state === 'failed') {
     fail('twg', `automatic install failed: ${res.why}`)
     // The vendor installer's OWN output, always -- not only under --verbose.
     // "installer exited 1" on its own tells the operator nothing they can act on
