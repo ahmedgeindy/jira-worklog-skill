@@ -80,11 +80,11 @@ const TWG_BIN_DIR = process.env.INSTALL_DIR_OVERRIDE
 // stop and ask a question nobody is there to answer.
 const TWG_VERSION = process.env.TWG_VERSION || '1.2.8'
 
-// Five minutes, not fifteen. A real install takes seconds; the only thing that ever
+// Two minutes, not fifteen. A real install takes seconds; the only thing that ever
 // consumed the old 900s budget was the vendor installer sitting on a prompt, and a
 // quarter of an hour of silence tells the operator nothing that a fast failure and
 // the installer's own output would not tell them better.
-const INSTALL_TIMEOUT_MS = 300_000
+const INSTALL_TIMEOUT_MS = 120_000
 
 const TWG_EXE = IS_WINDOWS ? 'twg.exe' : 'twg'
 
@@ -164,6 +164,17 @@ function run(cmd, argv, { timeout = 120_000, cwd, env } = {}) {
 // refreshed since the installer ran cannot make a working install look absent.
 let TWG = TWG_EXE
 const twg = (argv, opts) => run(TWG, argv, opts)
+
+/** twg's own version string, or a placeholder. Never throws. */
+function twgVersionOf(bin) {
+  const r = run(bin, ['--version'], { timeout: 30_000 })
+  // Plain string ops rather than a /\r?\n/ regex. That regex literal kept arriving
+  // in this file with a REAL carriage return inside it instead of the escape -- a
+  // syntax error the test suite cannot see, because nothing in the suite imports
+  // setup.mjs. trim() drops the stray CR without needing the pattern at all.
+  const first = (r.out ?? '').trim().split('\n')[0].trim()
+  return first ? `v${first.replace(/^v/, '')}` : '(version unknown)'
+}
 
 function locateTwg() {
   if (run(TWG_EXE, ['--version'], { timeout: 30_000 }).status === 0) return TWG_EXE
@@ -300,7 +311,37 @@ let installedTwgNow = false
 if (!found && !OPT.noInstallTwg) {
   note('twg not found — installing it from Atlassian:')
   const res = installTwg()
+
+  // The installer places and PATHs the binary, and only THEN runs
+  // `twg setup finalize`, which can stop and ask something. So a non-zero exit
+  // does not mean nothing was installed -- measured on a clean runner, the binary
+  // was already on disk and runnable while the installer sat on a legal-consent
+  // prompt. Ask the disk before believing the exit code.
+  //
+  // Deliberately NOT auto-answered. That prompt is Atlassian's Customer Agreement;
+  // accepting a legal agreement on someone else's behalf is not a thing an install
+  // script gets to do, however convenient a `--yes` would be here. twg will ask the
+  // human itself on first interactive use, which is the right place for it.
   if (!res.ok) {
+    const salvaged = locateTwg()
+    if (salvaged) {
+      TWG = salvaged
+      pass('twg', `${twgVersionOf(salvaged)} (installed)`)
+      note('The vendor installer did not finish cleanly, but the binary is present')
+      note('and runs, so setup continued. What it did not complete was its own final')
+      note('step (`twg setup finalize`).')
+      if (/\[y\/N\]|\[yes\/no\]|I agree|Customer Agreement/i.test(res.out ?? '')) {
+        note('')
+        note('It stopped on Atlassian\'s terms-of-use prompt. Nothing here will answer')
+        note('that for you: run `twg login` (or any twg command) once yourself and')
+        note('accept it there.')
+      }
+      found = salvaged
+      installedTwgNow = true
+    }
+  }
+
+  if (!res.ok && !found) {
     fail('twg', `automatic install failed: ${res.why}`)
     // The vendor installer's OWN output, always -- not only under --verbose.
     // "installer exited 1" on its own tells the operator nothing they can act on
