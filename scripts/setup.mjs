@@ -59,6 +59,33 @@ const TWG_BIN_DIR = process.env.INSTALL_DIR_OVERRIDE
   : IS_WINDOWS
     ? join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'Programs', 'twg', 'bin')
     : join(homedir(), '.local', 'bin')
+// The twg release to install. PINNED, and overridable with TWG_VERSION.
+//
+// Not pinned for caution's sake -- pinned because `latest` moved UNDER us and broke
+// the Windows install path. Measured 2026-09-15: `latest` resolved to v1.1.0 when it
+// had been v1.2.8 the day before, i.e. it went BACKWARDS. v1.1.0's `twg setup
+// finalize` does not honour the `--yes` the installer passes it, so it prompts
+//     Continue? [yes/no]:
+// and a non-interactive setup blocks until it is killed.
+//
+// The vendor's own shell installer does not have this problem, because it checks for
+// a terminal before handing finalize one:
+//     if { : < /dev/tty; } 2>/dev/null; then ... finalize < /dev/tty
+// install.ps1 computes the same thing (Test-ControllingTerminal) but uses it only for
+// telemetry and runs finalize with a live console regardless -- so the hang is
+// Windows-only, which is exactly why the Windows CI job exists.
+//
+// `twg upgrade` runs later in this setup, so pinning the INSTALL does not pin the
+// installed binary: a machine ends up current anyway, just via a path that cannot
+// stop and ask a question nobody is there to answer.
+const TWG_VERSION = process.env.TWG_VERSION || '1.2.8'
+
+// Five minutes, not fifteen. A real install takes seconds; the only thing that ever
+// consumed the old 900s budget was the vendor installer sitting on a prompt, and a
+// quarter of an hour of silence tells the operator nothing that a fast failure and
+// the installer's own output would not tell them better.
+const INSTALL_TIMEOUT_MS = 300_000
+
 const TWG_EXE = IS_WINDOWS ? 'twg.exe' : 'twg'
 
 const MANIFEST = '.jira-worklog-install.json'
@@ -239,12 +266,13 @@ function installTwg() {
       const argv = [
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script,
         '-Yes', '-SkipLogin', '-SkipSkills',
+        '-Version', TWG_VERSION,
         ...(override ? ['-InstallDir', resolve(override)] : []),
       ]
       const { exe, env } = powershellFor()
       note(`${exe} -NoProfile -ExecutionPolicy Bypass -File <downloaded> -Yes -SkipLogin -SkipSkills${override ? ' -InstallDir …' : ''}`)
       flush()
-      const r = run(exe, argv, { timeout: 900_000, env })
+      const r = run(exe, argv, { timeout: INSTALL_TIMEOUT_MS, env })
       return r.status === 0 ? { ok: true } : { ok: false, why: `installer exited ${r.status}`, out: r.out }
     }
 
@@ -254,10 +282,11 @@ function installTwg() {
     // installer writes to ~/.local/bin while we look somewhere else, and a perfectly
     // successful install gets reported as "the binary was not found afterwards".
     const shArgs = [script, '--yes', '--skip-login', '--skip-skills',
+      '--version', TWG_VERSION,
       ...(override ? ['--install-dir', resolve(override)] : [])]
     note(`bash <downloaded> --yes --skip-login --skip-skills${override ? ' --install-dir …' : ''}`)
     flush()
-    const r = run('bash', shArgs, { timeout: 900_000 })
+    const r = run('bash', shArgs, { timeout: INSTALL_TIMEOUT_MS })
     return r.status === 0 ? { ok: true } : { ok: false, why: `installer exited ${r.status}`, out: r.out }
   } finally {
     rmSync(work, { recursive: true, force: true })
@@ -284,6 +313,18 @@ if (!found && !OPT.noInstallTwg) {
       note('')
       note('The installer said:')
       for (const line of res.out.trim().split(/\r?\n/).slice(-15)) note(`  ${line}`)
+    }
+    // Name the one failure mode whose output looks like success right up to the
+    // last line. The vendor installer ends by running `twg setup finalize`, which
+    // can ask a question; there is nobody here to answer it, so the process sits
+    // until the timeout and every line before the prompt reads like a clean run.
+    if (/\[yes\/no\]|\[y\/N\]|Continue\?/i.test(res.out ?? '')) {
+      note('')
+      note('That last line is a PROMPT: the installer is waiting for an answer, and')
+      note('this setup has no terminal to give it one. It is not a download or a')
+      note('permissions problem, and re-running will hang in the same place.')
+      note(`Install once by hand with the command below, or pin a different release`)
+      note(`with TWG_VERSION=<version> (this run asked for ${TWG_VERSION}).`)
     }
     note('')
     officialInstructions()
