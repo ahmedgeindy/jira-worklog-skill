@@ -51,6 +51,22 @@ the install needs the `--install-dir` flag instead.
 `files` whitelist — not the working tree — decides what ships. Auditing the source
 directory would be a check that passes against the wrong thing.
 
+### The one thing the audit cannot check
+
+Every rule in `tools/pkgaudit.mjs` matches a SHAPE — a token, a key, a host, an id.
+Nothing matches arbitrary prose, and captured prose is where real data actually
+hides. A raw `worklog query` capture pasted into a fixture carries a colleague's
+name, a customer's name and an incident description, and only the first two are
+shaped like anything a rule can find.
+
+Two have now shipped past a CLEAN verdict: the original multiauthor fixture, and a
+real customer worklog comment ("fix the ivr…") that sat in `scripts/test/` — a
+directory inside the `files` whitelist — while `audit:public` cleared 46 files.
+
+So the rule is procedural, not technical: **never paste a raw API capture into a
+fixture.** Hand-write the rows, or redact every free-text field before the file is
+saved. The audit cannot catch this for you.
+
 `audit:selftest` exists because a scanner nobody has watched fail proves nothing. It
 plants a fake credential inside a path the whitelist ships and requires the scanner
 to catch it before the real report is believed.
