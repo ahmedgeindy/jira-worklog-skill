@@ -1,4 +1,4 @@
-name: End-to-end (Linux + macOS)
+name: End-to-end (Linux + macOS + Windows)
 
 # The Unix install path was code-reviewed against Atlassian's installer but had never
 # been executed: development happens on Windows. These runners are the only twg-less
@@ -112,6 +112,129 @@ jobs:
         run: node tools/e2e-setup.mjs --no-jira --allow-twg-install
 
       - name: Package audit
+        run: |
+          node tools/audit-package.mjs --self-test
+          node tools/audit-package.mjs --public
+
+  e2e-windows:
+    # Development happens on Windows, so this job is not proving the code runs at
+    # all -- it is proving the code runs on a machine that has never had twg,
+    # which no developer box here can demonstrate. Same reason the Unix job
+    # exists, opposite platform.
+    #
+    # Separate job rather than a matrix entry: every step below is PowerShell and
+    # the Unix job's steps are bash. Folding them into one matrix would mean a
+    # shell conditional inside every step, which is how a platform quietly stops
+    # being tested.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Unit tests
+        run: npm test
+
+      - name: twg must NOT be present yet
+        # The point of the job. If the runner image ever ships twg, the install
+        # step below silently becomes a no-op and keeps reporting success while
+        # testing nothing.
+        shell: pwsh
+        run: |
+          $twg = Get-Command twg -ErrorAction SilentlyContinue
+          if ($twg) {
+            Write-Host "::error::twg is already on PATH ($($twg.Source)); this job can no longer prove the install path"
+            exit 1
+          }
+          Write-Host "twg absent, as required"
+
+      - name: Fresh-machine install (this is the teammate experience)
+        # Exactly what `npx <pkg> setup` does, against a throwaway profile. There
+        # is no Jira session on a runner, so the run is EXPECTED to end with one
+        # failure -- the sign-in check. Everything before and after it must tick.
+        #
+        # USERPROFILE *and* LOCALAPPDATA are redirected: setup.mjs derives the
+        # skills directories from the home dir and the twg install dir from
+        # LOCALAPPDATA, and they are different roots on Windows.
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $fake = Join-Path $env:RUNNER_TEMP 'fresh-home'
+          New-Item -ItemType Directory -Force -Path (Join-Path $fake '.claude\skills') | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $fake 'AppData\Local') | Out-Null
+
+          $env:USERPROFILE = $fake
+          $env:HOME = $fake
+          $env:LOCALAPPDATA = Join-Path $fake 'AppData\Local'
+
+          $log = Join-Path $env:RUNNER_TEMP 'setup.log'
+          node scripts/setup.mjs setup 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          Write-Host "--- setup exited $code ---"
+
+          $text = Get-Content $log -Raw
+          $fail = 0
+          function Need($s) {
+            if ($text -like "*$s*") { Write-Host "ok: $s" }
+            else { Write-Host "::error::expected output missing: $s"; $script:fail = 1 }
+          }
+          Need 'twg not found'
+          Need 'teamwork-graph.atlassian.com/cli/install'
+          Need 'twg'
+          Need '(installed)'
+          Need 'jira-worklog'
+          Need 'verification'
+          Need 'Jira sign-in'
+          Need 'twg login --force'
+
+          # Exactly one failed check, and it is the sign-in one. Asserting merely
+          # "exit 2" would pass for a run that failed for six unrelated reasons.
+          $crosses = ([regex]::Matches($text, '(?m)^\s+✗ ')).Count
+          if ($crosses -ne 1) {
+            Write-Host "::error::expected exactly 1 failed check, found $crosses"; $fail = 1
+          }
+          if ($code -ne 2) {
+            Write-Host "::error::expected exit 2 (sign-in missing), got $code"; $fail = 1
+          }
+
+          # The binary really is where the Windows installer documents, and it runs.
+          $bin = Join-Path $env:LOCALAPPDATA 'Programs\twg\bin\twg.exe'
+          if (-not (Test-Path $bin)) {
+            Write-Host "::error::twg not found at $bin"; $fail = 1
+          } else {
+            & $bin --version
+          }
+          exit $fail
+
+      - name: Put the installed twg on PATH for the scenario matrix
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'fresh-home\AppData\Local\Programs\twg\bin'
+          Add-Content -Path $env:GITHUB_PATH -Value $dir -Encoding utf8
+
+      - name: Scenario matrix against the packed tarball
+        # The same 13 scenarios the Unix job runs, from the INSTALLED tarball in a
+        # different cwd with a disposable profile: clean install, repeat run
+        # (idempotency), twg present, twg missing, Jira auth missing, a foreign
+        # directory in the target path, unrelated skills beside ours, no harness
+        # directory at all, --link under npx, junction-target survival, an unknown
+        # subcommand, and the real auto-install.
+        #
+        # --no-jira: no Jira session here, so success means every other check
+        # ticked and the ONLY failure is sign-in.
+        # --allow-twg-install: re-runs the installer once, isolated by
+        # INSTALL_DIR_OVERRIDE. On Windows install.ps1 appends to the USER PATH
+        # rather than a shell profile; the runner is disposable, and the harness
+        # refuses to run this at all unless HOME sits inside its own workspace.
+        shell: pwsh
+        run: node tools/e2e-setup.mjs --no-jira --allow-twg-install
+
+      - name: Package audit
+        # Self-test first: a scanner nobody has watched fail proves nothing.
+        shell: pwsh
         run: |
           node tools/audit-package.mjs --self-test
           node tools/audit-package.mjs --public

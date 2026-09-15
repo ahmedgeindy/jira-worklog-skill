@@ -23,15 +23,41 @@ do for you is signing in, because that is an interactive browser login; it tells
 the exact command when it is needed.
 
 ```bash
-npm test          # 287 tests, no network, no Jira access needed
+npm test          # 345 tests, no network, no Jira access needed
 ```
+
+## Operating assumptions — read this before installing
+
+This skill was built for one team's working pattern and those choices are **baked
+in**. None of them is configurable except where noted. If any is wrong for you, the
+tool will be confidently wrong rather than obviously broken, so check them first.
+
+| Assumption | Value | Configurable? |
+|---|---|---|
+| Working week | **Sunday–Thursday** | No. `scripts/lib/tz.mjs` |
+| Day capacity | **8h** | No, except via `--capacity-hours` for the month total |
+| Daily policy floor | **7h** — a shorter day is reported `SHORT` and the shortfall is recorded in that day's worklog comment | No |
+| Day plausibility ceiling | **12h** — above this the gate demands a second look | No |
+| Month progress ceiling | **105%** of month-to-date capacity — a plan above it is **refused** | Ceiling no; capacity yes, via `--capacity-hours` |
+| Jira timezone | **read from your Jira profile** (`/rest/api/3/myself`); `Asia/Riyadh` is only the fallback when that read fails | Automatic |
+| Duration units | `1d` is **8h**, so `d`/`w` inputs are refused outright | No |
+
+**The work week is the one that will bite a Monday–Friday user.** Capacity would be
+computed from the wrong days, every Friday entry would raise a weekend warning, and
+every Sunday would silently count as a workday. There is no flag for it today —
+changing `WORKDAYS` in `scripts/lib/tz.mjs` is currently the only route, and
+`scripts/lib/capacity.mjs` reads that same definition so the two cannot drift apart.
+
+The timezone is the exception worth knowing: it is **not** hard-coded. It comes from
+your own Jira profile, and the tool hard-stops rather than guessing when your machine
+calendar and your Jira calendar disagree about what day it is.
 
 ## Install
 
 One command, on a fresh machine:
 
 ```bash
-npx <package-name>@latest setup
+npx @ahmedgeindy/jira-worklog@latest setup
 ```
 
 ```
@@ -78,7 +104,7 @@ a cache npm prunes); `--force` replaces a directory that is not this skill.
 
 ### Updating, and running it twice
 
-`npx <package-name>@latest setup` is also the update command. Re-running is safe:
+`npx @ahmedgeindy/jira-worklog@latest setup` is also the update command. Re-running is safe:
 
 - the installed copy carries `.jira-worklog-install.json`, so setup reports what
   actually happened — `v1.0.0 (new)`, `v1.0.0 (current, reinstalled)`, or

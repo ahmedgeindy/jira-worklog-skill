@@ -1,7 +1,9 @@
 {
-  "name": "jira-worklog-skill",
+  "name": "@ahmedgeindy/jira-worklog",
   "version": "1.0.0",
-  "private": true,
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Agent skill for logging time to Jira through the twg CLI, with a human gate and guarded writes",
   "type": "module",
   "bin": {

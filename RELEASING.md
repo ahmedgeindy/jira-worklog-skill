@@ -51,23 +51,54 @@ the install needs the `--install-dir` flag instead.
 `files` whitelist — not the working tree — decides what ships. Auditing the source
 directory would be a check that passes against the wrong thing.
 
+### The one thing the audit cannot check
+
+Every rule in `tools/pkgaudit.mjs` matches a SHAPE — a token, a key, a host, an id.
+Nothing matches arbitrary prose, and captured prose is where real data actually
+hides. A raw `worklog query` capture pasted into a fixture carries a colleague's
+name, a customer's name and an incident description, and only the first two are
+shaped like anything a rule can find.
+
+Two have now shipped past a CLEAN verdict: the original multiauthor fixture, and a
+real customer worklog comment ("fix the ivr…") that sat in `scripts/test/` — a
+directory inside the `files` whitelist — while `audit:public` cleared 46 files.
+
+So the rule is procedural, not technical: **never paste a raw API capture into a
+fixture.** Hand-write the rows, or redact every free-text field before the file is
+saved. The audit cannot catch this for you.
+
 `audit:selftest` exists because a scanner nobody has watched fail proves nothing. It
 plants a fake credential inside a path the whitelist ships and requires the scanner
 to catch it before the real report is believed.
 
-## Scope: not decided yet
+## Scope: decided — `@ahmedgeindy/jira-worklog`
 
-`package.json` still says `jira-worklog-skill` and carries `"private": true`. The
-scope must be settled before the first publish, because a published name is
-effectively permanent (the unpublish window is 72 hours, and the name stays taken).
+Chosen by the repository owner, 2026-09-14. `package.json` carries that name and
+`publishConfig.access: "public"`.
 
-`@ahmedgeindy/jira-worklog` is the recommendation. A company-named scope
-(`@istnetworks/...`) is deliberately **not** used: on npm, whoever creates an
-organisation owns it, so creating a company-named scope from a personal account puts
-the company's namespace under one employee's login. That is a company decision made
-with a company account, not a technical step to be taken in passing. Moving later is
-cheap — publish the same tarball under the company scope and `npm deprecate` the
-personal one with a pointer.
+`publishConfig.access` is not optional for a scoped package. npm defaults a scope to
+`restricted`, a restricted publish requires a paid plan, and a first publish without
+this line fails with **E402**.
+
+A company-named scope (`@istnetworks/...`) is deliberately **not** used: on npm,
+whoever creates an organisation owns it, so creating a company-named scope from a
+personal account puts the company's namespace under one employee's login. That is a
+company decision made with a company account, not a technical step taken in passing.
+Moving later is cheap — publish the same tarball under the company scope and
+`npm deprecate` the personal one with a pointer.
+
+A published name is effectively permanent: the unpublish window is 72 hours and the
+name stays taken afterwards.
+
+### The remaining gate
+
+`"private": true` is still in `package.json`. It is the last thing standing between
+this repo and a publish, and it is deliberate. Removing it is a one-line diff that
+belongs in its own release commit, made by the owner when they intend to publish:
+
+```diff
+-  "private": true,
+```
 
 (This file is not in the package `files` whitelist, so the company name here never
 ships. `npm run audit` scans the tarball, not the repo, which is why it stays clean.)
@@ -130,11 +161,14 @@ become world-readable:
 
 1. The org-identifying strings `npm run audit:public` lists — the internal Atlassian
    site name and real Jira issue keys.
-2. **Git history still contains the original unredacted test fixture** — a raw
-   `worklog query` capture with a colleague's real Jira identity and a customer's
-   incident description in it. The working tree is clean; history is not. Redacting
-   the tip was not enough, and going public would need that history squashed or
-   rewritten first.
+2. ~~Git history still contains the original unredacted test fixture.~~ **Done
+   2026-09-15**: history was rewritten with `git-filter-repo` (NUL-strip pass, then
+   text + commit-message replacement). A normal `git clone` is now clean.
+   **But `refs/pull/1/head` and `refs/pull/2/head` still pin the pre-rewrite
+   commits.** GitHub makes PR head refs immutable — a force-push cannot reach them,
+   and `git clone --mirror` still returns the old objects. Purging those needs
+   either a GitHub Support request or deleting and recreating the repository.
+   Until that is done, this repo must not be made public.
 
 ## Version numbers
 
