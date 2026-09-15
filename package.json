@@ -1,7 +1,6 @@
 {
   "name": "@ahmedgeindy/jira-worklog",
   "version": "1.0.0",
-  "private": true,
   "publishConfig": {
     "access": "public"
   },

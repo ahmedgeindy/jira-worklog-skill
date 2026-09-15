@@ -161,11 +161,14 @@ become world-readable:
 
 1. The org-identifying strings `npm run audit:public` lists — the internal Atlassian
    site name and real Jira issue keys.
-2. **Git history still contains the original unredacted test fixture** — a raw
-   `worklog query` capture with a colleague's real Jira identity and a customer's
-   incident description in it. The working tree is clean; history is not. Redacting
-   the tip was not enough, and going public would need that history squashed or
-   rewritten first.
+2. ~~Git history still contains the original unredacted test fixture.~~ **Done
+   2026-09-15**: history was rewritten with `git-filter-repo` (NUL-strip pass, then
+   text + commit-message replacement). A normal `git clone` is now clean.
+   **But `refs/pull/1/head` and `refs/pull/2/head` still pin the pre-rewrite
+   commits.** GitHub makes PR head refs immutable — a force-push cannot reach them,
+   and `git clone --mirror` still returns the old objects. Purging those needs
+   either a GitHub Support request or deleting and recreating the repository.
+   Until that is done, this repo must not be made public.
 
 ## Version numbers
 
