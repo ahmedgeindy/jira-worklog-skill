@@ -2,8 +2,10 @@
 
 Every item below was established by a live read-only probe against
 `example.atlassian.net` on 2026-09-09/10, and each quotes the command that proved it so a
-future maintainer can **re-verify rather than trust**. `scripts/preflight.mjs` re-asserts the five
-mandatory flags at runtime; if it stops the run, start here.
+future maintainer can **re-verify rather than trust**. `checkContract` in `scripts/lib/version.mjs` holds the five
+mandatory flags and is unit tested (`scripts/test/preflight.test.mjs`); it is not currently called
+by the CLI at runtime, so a renamed twg flag would not be caught until a write is attempted.
+If a write fails on an unknown flag, start here.
 
 twg version at time of probing: **1.2.7**. Binary is not on PATH:
 `%LOCALAPPDATA%\Programs\twg\bin\twg.exe`.

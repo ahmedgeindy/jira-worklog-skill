@@ -3,8 +3,8 @@
 Read this at **step 5.2** of `SKILL.md`. It covers only the write-execution step; every other rail,
 `--expect-hash`, the approval token and `check-write` are shared and unchanged.
 
-Measured against **codex-cli 0.153.4** on Windows, 2026-09-11. Full evidence in
-`docs/superpowers/specs/2026-09-11-jira-worklog-codex-port.md`.
+Measured against **codex-cli 0.153.4** on Windows, 2026-09-11. The full evidence notes were
+kept outside this repository and are not shipped with it.
 
 ## The mechanism: the human pastes
 

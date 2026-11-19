@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // CLI entry. Routes plan / emit / check-cmd / check-write / verify.
 // This file NEVER spawns a worklog write; the agent issues those as its own tool calls.
-// There is no `apply` subcommand and there must never be one — see
-// .superpowers/sdd/2026-09-09-jira-worklog-skill/task-12-brief.md.
+// There is no `apply` subcommand and there must never be one: lib/twg.mjs's
+// assertArgvSafe refuses to spawn `worklog add`, and SKILL.md safety rail 3 says every
+// write line comes from `emit`.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 import { runPlan } from './cmd/plan.mjs'

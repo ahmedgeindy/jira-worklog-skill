@@ -11,7 +11,7 @@ correct the first time.
 
 All arithmetic lives in `scripts/timelog.mjs`. Do not reproduce it in prose, do not compute hours
 or day boundaries yourself, and do not paraphrase the twg flags — the frozen contract is in
-`references/twg-worklog-contract.md`, and the script asserts it at runtime.
+`references/twg-worklog-contract.md`, and the unit tests pin its flag list (`checkContract` in `scripts/lib/version.mjs`).
 
 Load `Skill(twg-jira)` for Jira semantics rather than restating them.
 
