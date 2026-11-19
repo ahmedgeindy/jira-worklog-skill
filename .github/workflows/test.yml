@@ -34,7 +34,14 @@ jobs:
 
       # No `npm ci`: zero dependencies and no lockfile.
       - name: Unit tests
+        if: matrix.node != '18'
         run: npm test
+
+      # Node 18's `node --test` does not expand quoted globs, so the `npm test` script (which quotes
+      # them) cannot run there. The shell expands them here; same files, same runner.
+      - name: Unit tests (Node 18, shell-expanded globs)
+        if: matrix.node == '18'
+        run: node --test scripts/test/*.test.mjs tools/*.test.mjs
 
       - name: Package audit (self-test, then the real tarball)
         if: matrix.os == 'ubuntu-latest' && matrix.node == '22'
