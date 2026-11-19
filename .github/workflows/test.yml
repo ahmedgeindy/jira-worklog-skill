@@ -1,0 +1,43 @@
+name: Unit tests
+
+# Fast gate for pull requests: the unit suite (no network, no Jira, no vendor installer) plus the
+# package-content audit. The slower end-to-end workflow (e2e.yml) downloads and runs the twg
+# installer, so it stays on pushes to main and manual dispatch only, and publish.yml re-runs
+# tests and the audit before any release.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: node ${{ matrix.node }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # a Windows-only failure should not hide the Linux result
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['22']
+        include:
+          - os: ubuntu-latest
+            node: '18' # package.json engines: node >=18
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No `npm ci`: zero dependencies and no lockfile.
+      - name: Unit tests
+        run: npm test
+
+      - name: Package audit (self-test, then the real tarball)
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '22'
+        run: |
+          npm run audit:selftest
+          npm run audit

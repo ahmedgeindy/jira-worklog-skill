@@ -23,7 +23,7 @@ do for you is signing in, because that is an interactive browser login; it tells
 the exact command when it is needed.
 
 ```bash
-npm test          # 345 tests, no network, no Jira access needed
+npm test          # unit tests, no network, no Jira access needed
 ```
 
 ## Operating assumptions — read this before installing
@@ -60,6 +60,9 @@ One command, on a fresh machine:
 npx @ahmedgeindy/jira-worklog@latest setup
 ```
 
+(If the package has not been published to npm yet, this returns a 404. Use the clone
+install below and see [Distribution](#distribution).)
+
 ```
   ✓ Node.js       v22.14.0
   ✓ npm           v11.5.1
@@ -67,7 +70,7 @@ npx @ahmedgeindy/jira-worklog@latest setup
   ✓ Jira sign-in  Your Name
   ✓ dependencies  none required (zero runtime dependencies)
   ✓ jira-worklog  v1.0.0 (new) — 2 locations
-  ✓ verification  264 tests pass from the installed copy
+  ✓ verification  <N> tests pass from the installed copy
 
 Ready.
 ```
@@ -150,7 +153,7 @@ commands rather than continuing as though twg were present.
 **Verified on all three platforms, not just described.** Windows locally; Linux and
 macOS on every push, by a CI job that first asserts twg is *absent*, then runs the
 real fresh-machine flow and requires the binary to exist at `$HOME/.local/bin/twg`
-and run. Both reported `twg v1.2.8 (installed)` and 264 passing tests from the
+and run. Both reported `twg v1.2.8 (installed)` and every test passing from the
 installed copy.
 
 ### If you are not signed in to Jira
@@ -507,11 +510,12 @@ GitHub is the source of truth; npm is the delivery channel. Releases are cut fro
 tag and published by `.github/workflows/publish.yml` using npm trusted publishing
 (OIDC) — there is no publish token in this repository.
 
-**Not published yet.** `package.json` still carries `"private": true`, which makes
-`npm publish` refuse. That is a deliberate catch, not an oversight: see
-[RELEASING.md](RELEASING.md) for the first-release procedure, which cannot be
-automated because npm will not configure a trusted publisher for a package that does
-not exist yet.
+**First release is still manual.** The `"private": true` gate was removed in the 1.0.0
+release commit, but npm will not configure a trusted publisher for a package that does
+not exist yet, so the first publish is done by hand and every later one by the tag
+workflow. See [RELEASING.md](RELEASING.md). Until the first publish has happened,
+`npx @ahmedgeindy/jira-worklog` fails with a 404 and the clone install above is the
+way in. Check with `npm view @ahmedgeindy/jira-worklog version`.
 
 Before any release, two gates run against the tarball that would actually ship:
 
@@ -535,7 +539,7 @@ references/twg-worklog-contract.md  13 sections, each quoting the command that p
 scripts/setup.mjs                 `npm run setup` - verify twg, self-update it, install the skill
 scripts/timelog.mjs               CLI: plan / emit / check-cmd / check-write / verify
 scripts/lib/                      tz, urls, twg, twgstatus, identity, daytotal, dedup, evidence, plan, preview
-scripts/test/                     264 tests (287 with the tools/ suites)
+scripts/test/                     unit tests (`node:test`); the tools/ suites run in `npm test` too
 tools/                            release gates, NOT shipped in the package
   pkgaudit.mjs                    the forbidden-content rules (pure, unit tested)
   audit-package.mjs               packs a real tarball and scans what would ship

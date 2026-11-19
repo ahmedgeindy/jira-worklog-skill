@@ -90,15 +90,12 @@ Moving later is cheap — publish the same tarball under the company scope and
 A published name is effectively permanent: the unpublish window is 72 hours and the
 name stays taken afterwards.
 
-### The remaining gate
+### The private gate is already removed
 
-`"private": true` is still in `package.json`. It is the last thing standing between
-this repo and a publish, and it is deliberate. Removing it is a one-line diff that
-belongs in its own release commit, made by the owner when they intend to publish:
-
-```diff
--  "private": true,
-```
+`"private": true` was removed in the 1.0.0 release commit (`addf058`), and
+`publishConfig.access` is `public`. What still stands between the repo and a publish is
+the manual first publish described below. `publish.yml` also refuses a tag build if
+`"private": true` ever comes back.
 
 (This file is not in the package `files` whitelist, so the company name here never
 ships. `npm run audit` scans the tarball, not the repo, which is why it stays clean.)
@@ -114,9 +111,8 @@ yet — the setting lives on the package's own settings page. So:
    npm login
    npm whoami          # must print your username
    ```
-2. Remove `"private": true` from `package.json` in a deliberate release commit, and
-   set `publishConfig.access` (`restricted` for a private package, `public` for a
-   public one).
+2. Confirm `package.json` has no `"private": true` (already true since 1.0.0) and that
+   `publishConfig.access` is `public`.
 3. Run every gate above one more time.
 4. Publish the first version by hand:
    ```bash
